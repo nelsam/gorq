@@ -2,6 +2,7 @@ package gorp_queries
 
 import (
 	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp_queries/interfaces"
 )
 
 type DbMap struct {
@@ -39,7 +40,7 @@ type DbMap struct {
 //         Greater(&queryType.StartDate, time.Now()).
 //         Select()
 //
-func (m *DbMap) Query(target interface{}) Query {
+func (m *DbMap) Query(target interface{}) interfaces.Query {
 	return query(m, m, target)
 }
 
@@ -56,6 +57,6 @@ type Transaction struct {
 	dbmap *DbMap
 }
 
-func (t *Transaction) Query(target interface{}) Query {
+func (t *Transaction) Query(target interface{}) interfaces.Query {
 	return query(t.dbmap, t, target)
 }

@@ -1,4 +1,8 @@
-package gorp_queries
+package interfaces
+
+import (
+	"github.com/nelsam/gorp_queries/filters"
+)
 
 // An Updater is a query that can execute UPDATE statements.
 type Updater interface {
@@ -54,12 +58,12 @@ type AssignJoiner interface {
 // A Wherer is a query that can execute statements with a WHERE
 // clause.
 type Wherer interface {
-	Where(...Filter) WhereQuery
+	Where(...filters.Filter) WhereQuery
 }
 
 // An AssignWherer is a Wherer with an assigner return type.
 type AssignWherer interface{
-	Where(...Filter) UpdateQuery
+	Where(...filters.Filter) UpdateQuery
 }
 
 // A SelectQuery is a query that can only execute SELECT statements.
@@ -70,9 +74,9 @@ type SelectQuery interface {
 
 // An UpdateQuery is a query that can only execute UPDATE statements.
 type UpdateQuery interface {
-	// Filter is used for queries that are more complex than a few
+	// filters.Filter is used for queries that are more complex than a few
 	// ANDed constraints.
-	Filter(...Filter) UpdateQuery
+	Filter(...filters.Filter) UpdateQuery
 
 	// Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual,
 	// and NotNull are all what you would expect.  Use them for adding
@@ -106,7 +110,7 @@ type AssignQuery interface {
 type AssignJoinQuery interface {
 	AssignJoiner
 
-	On(...Filter) AssignJoinQuery
+	On(...filters.Filter) AssignJoinQuery
 
 	Equal(fieldPtr interface{}, value interface{}) AssignJoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery
@@ -126,8 +130,8 @@ type AssignJoinQuery interface {
 type JoinQuery interface {
 	Joiner
 
-	// On for a JoinQuery is equivalent to Filter for a WhereQuery.
-	On(...Filter) JoinQuery
+	// On for a JoinQuery is equivalent to filters.Filter for a WhereQuery.
+	On(...filters.Filter) JoinQuery
 
 	// These methods should be roughly equivalent to those of a
 	// WhereQuery, except they add to the ON clause instead of the
@@ -149,9 +153,9 @@ type JoinQuery interface {
 // A WhereQuery is a query that does not set any values, but may have
 // a where clause.
 type WhereQuery interface {
-	// Filter is used for queries that are more complex than a few
+	// filters.Filter is used for queries that are more complex than a few
 	// ANDed constraints.
-	Filter(...Filter) WhereQuery
+	Filter(...filters.Filter) WhereQuery
 
 	// Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual,
 	// and NotNull are all what you would expect.  Use them for adding

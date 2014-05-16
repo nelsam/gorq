@@ -28,11 +28,11 @@ type fieldColumnMap struct {
 
 type structColumnMap []fieldColumnMap
 
-// columnForPointer takes an interface value (which should be a
+// LocateColumn takes an interface value (which should be a
 // pointer to one of the fields on the value that is being used as a
 // reference for query construction) and returns the pre-quoted column
 // name that should be used to reference that value in queries.
-func (structMap structColumnMap) columnForPointer(fieldPtr interface{}) (string, error) {
+func (structMap structColumnMap) LocateColumn(fieldPtr interface{}) (string, error) {
 	fieldMap, err := structMap.fieldMapForPointer(fieldPtr)
 	if err != nil {
 		return "", err
@@ -40,12 +40,12 @@ func (structMap structColumnMap) columnForPointer(fieldPtr interface{}) (string,
 	return fieldMap.quotedColumn, nil
 }
 
-// tableColumnForPointer takes an interface value (which should be a
+// LocateTableAndColumn takes an interface value (which should be a
 // pointer to one of the fields on the value that is being used as a
 // reference for query construction) and returns the pre-quoted
 // table.column name that should be used to reference that value in
 // some types of queries (mostly where statements and select queries).
-func (structMap structColumnMap) tableColumnForPointer(fieldPtr interface{}) (string, error) {
+func (structMap structColumnMap) LocateTableAndColumn(fieldPtr interface{}) (string, error) {
 	fieldMap, err := structMap.fieldMapForPointer(fieldPtr)
 	if err != nil {
 		return "", err
@@ -106,10 +106,10 @@ type QueryPlan struct {
 	executor       gorp.SqlExecutor
 	target         reflect.Value
 	colMap         structColumnMap
-	joins          []*joinFilter
+	joins          []*filters.JoinFilter
 	assignCols     []string
 	assignBindVars []string
-	filters        MultiFilter
+	filters        filters.MultiFilter
 	orderBy        []string
 	groupBy        []string
 	limit          int64
@@ -120,7 +120,7 @@ type QueryPlan struct {
 // query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func query(m *DbMap, exec gorp.SqlExecutor, target interface{}) Query {
+func query(m *DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
 	plan := &QueryPlan{
 		dbMap:    m,
 		executor: exec,
@@ -191,33 +191,33 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 // Assign sets up an assignment operation to assign the passed in
 // value to the passed in field pointer.  This is used for creating
 // UPDATE or INSERT queries.
-func (plan *QueryPlan) Assign(fieldPtr interface{}, value interface{}) AssignQuery {
+func (plan *QueryPlan) Assign(fieldPtr interface{}, value interface{}) interfaces.AssignQuery {
 	assignPlan := &AssignQueryPlan{QueryPlan: plan}
 	return assignPlan.Assign(fieldPtr, value)
 }
 
 func (plan *QueryPlan) storeJoin() {
-	if lastJoinFilter, ok := plan.filters.(*joinFilter); ok {
+	if lastJoinFilter, ok := plan.filters.(*filters.JoinFilter); ok {
 		if plan.joins == nil {
-			plan.joins = make([]*joinFilter, 0, 2)
+			plan.joins = make([]*filters.JoinFilter, 0, 2)
 		}
 		plan.joins = append(plan.joins, lastJoinFilter)
 		plan.filters = nil
 	}
 }
 
-func (plan *QueryPlan) Join(target interface{}) JoinQuery {
+func (plan *QueryPlan) Join(target interface{}) interfaces.JoinQuery {
 	plan.storeJoin()
 	table, err := plan.mapTable(reflect.ValueOf(target))
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 	}
 	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-	plan.filters = &joinFilter{quotedJoinTable: quotedTable}
+	plan.filters = &filters.JoinFilter{QuotedJoinTable: quotedTable}
 	return &JoinQueryPlan{QueryPlan: plan}
 }
 
-func (plan *QueryPlan) On(filters ...Filter) JoinQuery {
+func (plan *QueryPlan) On(filters ...filters.Filter) interfaces.JoinQuery {
 	plan.filters.Add(filters...)
 	return &JoinQueryPlan{QueryPlan: plan}
 }
@@ -225,10 +225,10 @@ func (plan *QueryPlan) On(filters ...Filter) JoinQuery {
 // Where stores any join filter and allocates a new and filter to use
 // for WHERE clause creation.  If you pass filters to it, they will be
 // passed to plan.Filter().
-func (plan *QueryPlan) Where(filters ...Filter) WhereQuery {
+func (plan *QueryPlan) Where(filterSlice ...filters.Filter) interfaces.WhereQuery {
 	plan.storeJoin()
-	plan.filters = new(andFilter)
-	plan.Filter(filters...)
+	plan.filters = new(filters.AndFilter)
+	plan.Filter(filterSlice...)
 	return plan
 }
 
@@ -238,56 +238,56 @@ func (plan *QueryPlan) Where(filters ...Filter) WhereQuery {
 //
 //     query.Filter(gorp.Or(gorp.Equal(&field.Id, id), gorp.Less(&field.Priority, 3)))
 //
-func (plan *QueryPlan) Filter(filters ...Filter) WhereQuery {
+func (plan *QueryPlan) Filter(filters ...filters.Filter) interfaces.WhereQuery {
 	plan.filters.Add(filters...)
 	return plan
 }
 
 // Equal adds a column = value comparison to the where clause.
-func (plan *QueryPlan) Equal(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(Equal(fieldPtr, value))
+func (plan *QueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.Equal(fieldPtr, value))
 }
 
 // NotEqual adds a column != value comparison to the where clause.
-func (plan *QueryPlan) NotEqual(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(NotEqual(fieldPtr, value))
+func (plan *QueryPlan) NotEqual(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.NotEqual(fieldPtr, value))
 }
 
 // Less adds a column < value comparison to the where clause.
-func (plan *QueryPlan) Less(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(Less(fieldPtr, value))
+func (plan *QueryPlan) Less(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.Less(fieldPtr, value))
 }
 
 // LessOrEqual adds a column <= value comparison to the where clause.
-func (plan *QueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(LessOrEqual(fieldPtr, value))
+func (plan *QueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.LessOrEqual(fieldPtr, value))
 }
 
 // Greater adds a column > value comparison to the where clause.
-func (plan *QueryPlan) Greater(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(Greater(fieldPtr, value))
+func (plan *QueryPlan) Greater(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.Greater(fieldPtr, value))
 }
 
 // GreaterOrEqual adds a column >= value comparison to the where clause.
-func (plan *QueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) WhereQuery {
-	return plan.Filter(GreaterOrEqual(fieldPtr, value))
+func (plan *QueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.GreaterOrEqual(fieldPtr, value))
 }
 
 // Null adds a column IS NULL comparison to the where clause
-func (plan *QueryPlan) Null(fieldPtr interface{}) WhereQuery {
-	return plan.Filter(Null(fieldPtr))
+func (plan *QueryPlan) Null(fieldPtr interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.Null(fieldPtr))
 }
 
 // NotNull adds a column IS NOT NULL comparison to the where clause
-func (plan *QueryPlan) NotNull(fieldPtr interface{}) WhereQuery {
-	return plan.Filter(NotNull(fieldPtr))
+func (plan *QueryPlan) NotNull(fieldPtr interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.NotNull(fieldPtr))
 }
 
 // OrderBy adds a column to the order by clause.  The direction is
 // optional - you may pass in an empty string to order in the default
 // direction for the given column.
-func (plan *QueryPlan) OrderBy(fieldPtr interface{}, direction string) SelectQuery {
-	column, err := plan.colMap.tableColumnForPointer(fieldPtr)
+func (plan *QueryPlan) OrderBy(fieldPtr interface{}, direction string) interfaces.SelectQuery {
+	column, err := plan.colMap.LocateTableAndColumn(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
@@ -304,8 +304,8 @@ func (plan *QueryPlan) OrderBy(fieldPtr interface{}, direction string) SelectQue
 }
 
 // GroupBy adds a column to the group by clause.
-func (plan *QueryPlan) GroupBy(fieldPtr interface{}) SelectQuery {
-	column, err := plan.colMap.tableColumnForPointer(fieldPtr)
+func (plan *QueryPlan) GroupBy(fieldPtr interface{}) interfaces.SelectQuery {
+	column, err := plan.colMap.LocateTableAndColumn(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
@@ -315,13 +315,13 @@ func (plan *QueryPlan) GroupBy(fieldPtr interface{}) SelectQuery {
 }
 
 // Limit sets the limit clause of the query.
-func (plan *QueryPlan) Limit(limit int64) SelectQuery {
+func (plan *QueryPlan) Limit(limit int64) interfaces.SelectQuery {
 	plan.limit = limit
 	return plan
 }
 
 // Offset sets the offset clause of the query.
-func (plan *QueryPlan) Offset(offset int64) SelectQuery {
+func (plan *QueryPlan) Offset(offset int64) interfaces.SelectQuery {
 	plan.offset = offset
 	return plan
 }
@@ -467,7 +467,7 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 	fromSlice := make([]string, 0, len(plan.joins))
 	whereBuffer := bytes.Buffer{}
 	for _, join := range plan.joins {
-		fromSlice = append(fromSlice, join.quotedJoinTable)
+		fromSlice = append(fromSlice, join.QuotedJoinTable)
 		whereClause, whereArgs, err := join.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
 		if err != nil {
 			return "", "", err
@@ -570,42 +570,42 @@ type JoinQueryPlan struct {
 	*QueryPlan
 }
 
-func (plan *JoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.NotEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) Less(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) Less(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Less(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.LessOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) Greater(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) Greater(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Greater(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) JoinQuery {
+func (plan *JoinQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.GreaterOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *JoinQueryPlan) Null(fieldPtr interface{}) JoinQuery {
+func (plan *JoinQueryPlan) Null(fieldPtr interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Null(fieldPtr)
 	return plan
 }
 
-func (plan *JoinQueryPlan) NotNull(fieldPtr interface{}) JoinQuery {
+func (plan *JoinQueryPlan) NotNull(fieldPtr interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
 	return plan
 }
@@ -622,8 +622,8 @@ type AssignQueryPlan struct {
 	*QueryPlan
 }
 
-func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) AssignQuery {
-	column, err := plan.colMap.columnForPointer(fieldPtr)
+func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) interfaces.AssignQuery {
+	column, err := plan.colMap.LocateColumn(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
@@ -634,57 +634,57 @@ func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) Ass
 	return plan
 }
 
-func (plan *AssignQueryPlan) Join(table interface{}) AssignJoinQuery {
+func (plan *AssignQueryPlan) Join(table interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.Join(table)
 	return &AssignJoinQueryPlan{plan}
 }
 
-func (plan *AssignQueryPlan) Where(filters ...Filter) UpdateQuery {
+func (plan *AssignQueryPlan) Where(filters ...filters.Filter) interfaces.UpdateQuery {
 	plan.QueryPlan.Where(filters...)
 	return plan
 }
 
-func (plan *AssignQueryPlan) Filter(filters ...Filter) UpdateQuery {
+func (plan *AssignQueryPlan) Filter(filters ...filters.Filter) interfaces.UpdateQuery {
 	plan.QueryPlan.Filter(filters...)
 	return plan
 }
 
-func (plan *AssignQueryPlan) Equal(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.NotEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) Less(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) Less(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.Less(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.LessOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) Greater(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) Greater(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.Greater(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.GreaterOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignQueryPlan) Null(fieldPtr interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) Null(fieldPtr interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.Null(fieldPtr)
 	return plan
 }
 
-func (plan *AssignQueryPlan) NotNull(fieldPtr interface{}) UpdateQuery {
+func (plan *AssignQueryPlan) NotNull(fieldPtr interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
 	return plan
 }
@@ -695,47 +695,47 @@ type AssignJoinQueryPlan struct {
 	*AssignQueryPlan
 }
 
-func (plan *AssignJoinQueryPlan) On(filters ...Filter) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) On(filters ...filters.Filter) interfaces.AssignJoinQuery {
 	plan.AssignQueryPlan.On(filters...)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.NotEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) Less(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) Less(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.Less(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.LessOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) Greater(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) Greater(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.Greater(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.GreaterOrEqual(fieldPtr, value)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) Null(fieldPtr interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) Null(fieldPtr interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.Null(fieldPtr)
 	return plan
 }
 
-func (plan *AssignJoinQueryPlan) NotNull(fieldPtr interface{}) AssignJoinQuery {
+func (plan *AssignJoinQueryPlan) NotNull(fieldPtr interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
 	return plan
 }
