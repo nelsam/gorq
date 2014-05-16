@@ -3,9 +3,11 @@ package gorp_queries
 import (
 	"bytes"
 	"errors"
+	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp_queries/filters"
+	"github.com/nelsam/gorp_queries/interfaces"
 	"reflect"
 	"strings"
-	"github.com/coopernurse/gorp"
 )
 
 type fieldColumnMap struct {

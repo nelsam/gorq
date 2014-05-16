@@ -62,7 +62,7 @@ type Wherer interface {
 }
 
 // An AssignWherer is a Wherer with an assigner return type.
-type AssignWherer interface{
+type AssignWherer interface {
 	Where(...filters.Filter) UpdateQuery
 }
 

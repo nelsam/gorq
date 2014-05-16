@@ -2,8 +2,8 @@ package filters
 
 import (
 	"bytes"
-	"reflect"
 	"github.com/coopernurse/gorp"
+	"reflect"
 )
 
 // A TableAndColumnLocater takes a struct field reference and returns
