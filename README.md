@@ -2,10 +2,13 @@ gorp_queries
 ============
 
 ### WARNING:
-This extension is not ready yet.  It was originally
+
+*This extension is not ready yet.  It was originally
 created as a patch directly to gorp, and is in the process of
 being moved and restructured as an extension.  Everything (even
-the repository name) is subject to change until further notice.
+the repository name) is subject to change until further notice.*
+
+## About
 
 gorp_queries extends [gorp](github.com/coopernurse/gorp) with a query
 DSL intended to catch SQL mistakes at compile time instead of runtime.
