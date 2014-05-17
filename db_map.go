@@ -3,6 +3,7 @@ package gorp_queries
 import (
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorp_queries/interfaces"
+	"github.com/nelsam/gorp_queries/query_plans"
 )
 
 type DbMap struct {
@@ -41,7 +42,8 @@ type DbMap struct {
 //         Select()
 //
 func (m *DbMap) Query(target interface{}) interfaces.Query {
-	return query(m, m, target)
+	gorpMap := &m.DbMap
+	return query_plans.Query(gorpMap, gorpMap, target)
 }
 
 func (m *DbMap) Begin() (*Transaction, error) {
@@ -58,5 +60,5 @@ type Transaction struct {
 }
 
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return query(t.dbmap, t, target)
+	return query_plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
 }

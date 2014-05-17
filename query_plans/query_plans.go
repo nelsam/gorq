@@ -1,4 +1,4 @@
-package gorp_queries
+package query_plans
 
 import (
 	"bytes"
@@ -104,7 +104,7 @@ type QueryPlan struct {
 	Errors []error
 
 	table          *gorp.TableMap
-	dbMap          *DbMap
+	dbMap          *gorp.DbMap
 	executor       gorp.SqlExecutor
 	target         reflect.Value
 	colMap         structColumnMap
@@ -119,10 +119,10 @@ type QueryPlan struct {
 	args           []interface{}
 }
 
-// query generates a Query for a target model.  The target that is
+// Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func query(m *DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
 	plan := &QueryPlan{
 		dbMap:    m,
 		executor: exec,
