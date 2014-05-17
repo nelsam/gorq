@@ -636,11 +636,6 @@ func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) int
 	return plan
 }
 
-func (plan *AssignQueryPlan) Join(table interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.Join(table)
-	return &AssignJoinQueryPlan{plan}
-}
-
 func (plan *AssignQueryPlan) Where(filters ...filters.Filter) interfaces.UpdateQuery {
 	plan.QueryPlan.Where(filters...)
 	return plan
@@ -687,57 +682,6 @@ func (plan *AssignQueryPlan) Null(fieldPtr interface{}) interfaces.UpdateQuery {
 }
 
 func (plan *AssignQueryPlan) NotNull(fieldPtr interface{}) interfaces.UpdateQuery {
-	plan.QueryPlan.NotNull(fieldPtr)
-	return plan
-}
-
-// An AssignJoinQueryPlan is equivalent to an AssignQueryPlan, with
-// different return types to match AssignJoinQuery.
-type AssignJoinQueryPlan struct {
-	*AssignQueryPlan
-}
-
-func (plan *AssignJoinQueryPlan) On(filters ...filters.Filter) interfaces.AssignJoinQuery {
-	plan.AssignQueryPlan.On(filters...)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.Equal(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) NotEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.NotEqual(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) Less(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.Less(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) LessOrEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.LessOrEqual(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) Greater(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.Greater(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.GreaterOrEqual(fieldPtr, value)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) Null(fieldPtr interface{}) interfaces.AssignJoinQuery {
-	plan.QueryPlan.Null(fieldPtr)
-	return plan
-}
-
-func (plan *AssignJoinQueryPlan) NotNull(fieldPtr interface{}) interfaces.AssignJoinQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
 	return plan
 }

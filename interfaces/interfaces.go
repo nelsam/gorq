@@ -129,7 +129,6 @@ type UpdateQuery interface {
 // insert or update statement.
 type AssignQuery interface {
 	Assigner
-	AssignJoiner
 	AssignWherer
 	Inserter
 	Updater
