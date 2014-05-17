@@ -6,6 +6,8 @@ import (
 	"github.com/nelsam/gorp_queries/query_plans"
 )
 
+// DbMap embeds "github.com/coopernurse/gorp".DbMap and adds query
+// methods to it.
 type DbMap struct {
 	gorp.DbMap
 }
@@ -41,11 +43,15 @@ type DbMap struct {
 //         Greater(&queryType.StartDate, time.Now()).
 //         Select()
 //
+// See the interfaces package for details on what the query types are
+// capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
 	return query_plans.Query(gorpMap, gorpMap, target)
 }
 
+// Begin acts just like "github.com/coopernurse/gorp".DbMap.Begin,
+// except that its return type is gorp_queries.Transaction.
 func (m *DbMap) Begin() (*Transaction, error) {
 	t, err := m.DbMap.Begin()
 	if err != nil {
@@ -54,11 +60,15 @@ func (m *DbMap) Begin() (*Transaction, error) {
 	return &Transaction{Transaction: *t, dbmap: m}, nil
 }
 
+// Transaction embeds "github.com/coopernurse/gorp".Transaction and
+// adds query methods to it.
 type Transaction struct {
 	gorp.Transaction
 	dbmap *DbMap
 }
 
+// Query runs a query within a transaction.  See DbMap.Query for full
+// documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
 	return query_plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
 }

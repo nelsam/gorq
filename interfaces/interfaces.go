@@ -6,63 +6,91 @@ import (
 
 // An Updater is a query that can execute UPDATE statements.
 type Updater interface {
+	// Update executes an update statement and returns the updated row
+	// count and any errors encountered.
 	Update() (rowsUpdated int64, err error)
 }
 
 // A Deleter is a query that can execute DELETE statements.
 type Deleter interface {
+	// Delete executes a delete statement and returns the deleted row
+	// count and any errors encountered.
 	Delete() (rowsDeleted int64, err error)
 }
 
 // An Inserter is a query that can execute INSERT statements.
 type Inserter interface {
+	// Insert executes an insert statement and returns any errors
+	// encountered.
 	Insert() error
 }
 
 // A Selector is a query that can execute SELECT statements.
 type Selector interface {
-	// Execute the select statement, return the results as a slice of
-	// the type that was used to create the query.
+	// Select executes the select statement and returns the resulting
+	// rows and any errors encountered.  The resulting rows will be of
+	// the same type as the type used as a reference for generating
+	// the query.
 	Select() (results []interface{}, err error)
 
-	// Execute the select statement, but use the passed in slice
-	// pointer as the target to append to.
+	// SelectToTarget executes the select statement and returns any
+	// errors encountered.  The resulting rows will be appended to the
+	// passed in target, which must be a pointer to a slice.
 	SelectToTarget(target interface{}) error
 }
 
 // A SelectManipulator is a query that will return a list of results
-// which can be manipulated.
+// which can be manipulated.  Offset and Limit are rarely used without
+// OrderBy, as the results can be unpredictable.  In Go terms, think
+// of Offset and Limit as options to make the query return
+// results[Offset:Offset+Limit].
 type SelectManipulator interface {
+	// OrderBy orders the resulting result list by a field of the
+	// reference struct and a direction, which can be "asc" or "desc".
 	OrderBy(fieldPtr interface{}, direction string) SelectQuery
+
+	// GroupBy groups the result list by a field of the reference
+	// struct.
 	GroupBy(fieldPtr interface{}) SelectQuery
+
+	// Limit limits the result list to a maximum length.
 	Limit(int64) SelectQuery
+
+	// Offset sets the starting point of the result list.
 	Offset(int64) SelectQuery
 }
 
 // An Assigner is a query that can set columns to values.
 type Assigner interface {
+	// Assign assigns a value to a field of the reference struct.
+	// Note that the first argument is always the target, and the
+	// second argument is always the value that is going to be
+	// assigned.
 	Assign(fieldPtr interface{}, value interface{}) AssignQuery
 }
 
 // A Joiner is a query that can add tables as join clauses.
 type Joiner interface {
+	// Join adds a table to the query.  The return type (JoinQuery)
+	// has methods for filtering how the new table relates to other
+	// tables in the query.
 	Join(table interface{}) JoinQuery
-}
-
-// An AssignJoiner is a Joiner with an assigner return type, for
-// insert or update statements with a FROM clause.
-type AssignJoiner interface {
-	Join(table interface{}) AssignJoinQuery
 }
 
 // A Wherer is a query that can execute statements with a WHERE
 // clause.
 type Wherer interface {
+	// Where is used to assert that you're ready to start adding
+	// filters to the where clause of the query.  You can pass a list
+	// of filters (which will be combined in an AndFilter), or just
+	// call it with no arguments for better readability than
+	// .(WhereQuery).
 	Where(...filters.Filter) WhereQuery
 }
 
 // An AssignWherer is a Wherer with an assigner return type.
 type AssignWherer interface {
+	// Where is the same as Wherer.Where(), save for the return type.
 	Where(...filters.Filter) UpdateQuery
 }
 
@@ -74,14 +102,15 @@ type SelectQuery interface {
 
 // An UpdateQuery is a query that can only execute UPDATE statements.
 type UpdateQuery interface {
-	// filters.Filter is used for queries that are more complex than a few
+	// Filter is used for queries that are more complex than a few
 	// ANDed constraints.
 	Filter(...filters.Filter) UpdateQuery
 
 	// Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual,
-	// and NotNull are all what you would expect.  Use them for adding
-	// constraints to a query.  More than one constraint will be ANDed
-	// together.
+	// and NotNull are sugar to add filters to the where clause of the
+	// query, which are combined in an AndFilter.  For example,
+	// Equal(fieldPtr, value) is just sugar for
+	// Filter(filters.Equal(fieldPtr, value)).
 	Equal(fieldPtr interface{}, value interface{}) UpdateQuery
 	NotEqual(fieldPtr interface{}, value interface{}) UpdateQuery
 	Less(fieldPtr interface{}, value interface{}) UpdateQuery
@@ -92,11 +121,12 @@ type UpdateQuery interface {
 	Null(fieldPtr interface{}) UpdateQuery
 
 	// An UpdateQuery has both assignments and a where clause, which
-	// means the only query type it could be is an UPDATE statement.
+	// means that it must be an update statement.
 	Updater
 }
 
-// An AssignQuery is a query that may set values.
+// An AssignQuery is a query that has assigned values.  It must be an
+// insert or update statement.
 type AssignQuery interface {
 	Assigner
 	AssignJoiner
@@ -105,37 +135,18 @@ type AssignQuery interface {
 	Updater
 }
 
-// An AssignJoinQuery is a clone of JoinQuery, but for UPDATE and
-// INSERT statements instead of DELETE and SELECT.
-type AssignJoinQuery interface {
-	AssignJoiner
-
-	On(...filters.Filter) AssignJoinQuery
-
-	Equal(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	NotEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	Less(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	LessOrEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	Greater(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	GreaterOrEqual(fieldPtr interface{}, value interface{}) AssignJoinQuery
-	NotNull(fieldPtr interface{}) AssignJoinQuery
-	Null(fieldPtr interface{}) AssignJoinQuery
-
-	AssignWherer
-	Updater
-}
-
 // A JoinQuery is a query that uses join operations to compare values
 // between tables.
 type JoinQuery interface {
 	Joiner
 
-	// On for a JoinQuery is equivalent to filters.Filter for a WhereQuery.
+	// On for a JoinQuery is equivalent to WhereQuery.Filter, except
+	// it is used in the join clause.
 	On(...filters.Filter) JoinQuery
 
-	// These methods should be roughly equivalent to those of a
-	// WhereQuery, except they add to the ON clause instead of the
-	// WHERE clause.
+	// These methods are sugar for filtering a join, the same as the
+	// methods on WhereQuery.  Equal(fieldPtr, value) is sugar for
+	// On(filters.Equal(fieldPtr, value)).
 	Equal(fieldPtr interface{}, value interface{}) JoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) JoinQuery
 	Less(fieldPtr interface{}, value interface{}) JoinQuery
@@ -146,21 +157,27 @@ type JoinQuery interface {
 	Null(fieldPtr interface{}) JoinQuery
 
 	Wherer
-	Deleter
+
+	// According to the SQL standard, the only statements that can
+	// have any kind of multi-table clauses are select statements.
+	// Most languages have extensions to support what are effectively
+	// join operations on other statements, but since that is not part
+	// of the standard, it is not supported here.
 	Selector
 }
 
 // A WhereQuery is a query that does not set any values, but may have
 // a where clause.
 type WhereQuery interface {
-	// filters.Filter is used for queries that are more complex than a few
-	// ANDed constraints.
+	// Filter is used to add filters to the where clause.  By default,
+	// they are combined using an AndFilter.
 	Filter(...filters.Filter) WhereQuery
 
 	// Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual,
-	// and NotNull are all what you would expect.  Use them for adding
-	// constraints to a query.  More than one constraint will be ANDed
-	// together.
+	// and NotNull are sugar to add filters to the where clause of the
+	// query, which are combined in an AndFilter.  For example,
+	// Equal(fieldPtr, value) is just sugar for
+	// Filter(filters.Equal(fieldPtr, value)).
 	Equal(fieldPtr interface{}, value interface{}) WhereQuery
 	NotEqual(fieldPtr interface{}, value interface{}) WhereQuery
 	Less(fieldPtr interface{}, value interface{}) WhereQuery
@@ -170,10 +187,8 @@ type WhereQuery interface {
 	NotNull(fieldPtr interface{}) WhereQuery
 	Null(fieldPtr interface{}) WhereQuery
 
-	// A WhereQuery should be used when a where clause was requested
-	// right off the bat, which means there have been no calls to
-	// Assign.  Only delete and select statements can have a where
-	// clause without doing assignment.
+	// A WhereQuery is returned when Where() has been called before
+	// Assign(), which means it must be a select or delete statement.
 	SelectManipulator
 	Deleter
 	Selector
@@ -183,25 +198,77 @@ type WhereQuery interface {
 // query will gradually be restricted based on which types of queries
 // are capable of performing the requested operations.
 //
-// For example, UPDATE statements may both set values and have a where
-// clause, but SELECT and DELETE statements cannot set values, and
-// INSERT statements cannot have a WHERE clause.  SELECT statements
-// are the only types that can have a GROUP BY, ORDER BY, or LIMIT
-// clause.
+// For example, select and delete statements cannot assign values to
+// columns, and insert statements cannot have a where clause.  Select
+// statements are the only statements that are allowed to join with
+// other tables.
 //
-// Because of this design, the following would actually be a compile
-// error:
+// You can override this functionality using simple type assertions,
+// but it is there to protect you from accidentally writing invalid
+// queries.
 //
-//     t := new(myType)
-//     q, err := dbmap.Query(t).
-//         Assign(&t.Foo, "test").
+// Also note that this design is mainly for restricting queries
+// generated in one small block of code.  If you need to generate
+// individual parts of the query in distinct sections of your code,
+// you can safely ignore the return types until you call the final
+// execution method.  Here are a few example queries:
+//
+//     // These are very creative model names.  I know.
+//     ref := new(Model)
+//     parentRef := new(Parent)
+//
+//     // Get the Model row related to the Parent specified by
+//     // parentId.
+//     results, err := dbMap.Query(ref).
+//         Join(parentRef).
+//         On(). // For readability.
+//         Equal(&parentRef.Model, &ref.Id).
 //         Where().
-//         Less(&t.Created, time.Now()).
-//         Insert()
+//         Equal(&parentRef.Id, parentId).
+//         Select()
 //
-// Since the return value from Assign() is an AssignQuery, the return value
-// from Where() will be an UpdateQuery, which doesn't have an Insert()
-// method.
+//     // Generate range filters to pass to Where()
+//     range := []filters.Filter{
+//         references.Less(&parentRef.ActiveDate, end),
+//         references.Greater(&parentRef.ActiveDate, start),
+//     }
+//     // Get a list of Models within a certain date range.
+//     results, err := dbMap.Query(ref).
+//         Join(parentRef). // On() is unnecessary
+//         Equal(&parentRef.Model, &ref.Id).
+//         Where(range...).
+//         OrderBy(&parentRef.ActiveDate, "ASC").
+//         Select()
+//     // Above, note that the return type of OrderBy no longer
+//     // has methods for manipulating the where clause, so without a
+//     // type assertion, you won't be able to manipulate the where
+//     // clause beyond that point.  This is intended for readability
+//     // restrictions in cascading method calls, to make the
+//     // statement structure familiar to those who know standard SQL.
+//
+//     // Here, we use a query variable because our query will be
+//     // generated using some if statements.  We also choose to
+//     // directly pass a filter to On() for the join clause.
+//     q := dbMap.Query(ref).
+//         Join(parentRef).
+//         On(filters.Equal(&parentRef.Model, &ref.Id)).
+//         Where()
+//     if parentType == PAST {
+//         // Return values are only for cascading method calls - if
+//         // we do it this way, we are free to continue manipulating
+//         // the where clause after the call to OrderBy.
+//         q.Less(&parentRef.ActiveDate, time.Now())
+//         q.OrderBy(&parentRef.ActiveDate, "ASC")
+//     }
+//     if parentType != "" {
+//         // Again, the type of q hasn't changed, so we can still add
+//         // to the where clause.
+//         q.Equal(&parentRef.Type, parentType)
+//     }
+//     results, err := q.Select()
+//
+// Note that many SQL languages have extensions to the SQL standard,
+// and we provide some support for them in the extended_sql package.
 type Query interface {
 	// A query that has had no methods called can both perform
 	// assignments and still have a where clause.

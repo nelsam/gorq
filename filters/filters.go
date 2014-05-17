@@ -30,7 +30,7 @@ type MultiFilter interface {
 	Add(filters ...Filter)
 }
 
-// A combinedFilter is a filter that has more than one sub-filter.
+// A CombinedFilter is a filter that has more than one sub-filter.
 // This is mainly for things like AND or OR operations.
 type CombinedFilter struct {
 	subFilters []Filter
@@ -86,9 +86,8 @@ func (filter *OrFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dial
 	return filter.joinFilters(" or ", structMap, dialect, startBindIdx)
 }
 
-// A JoinFilter is an AndFilter used for ON clauses.  It contains the
-// name of the table that this filter is for, to make generating a
-// join clause simple.
+// A JoinFilter is an AndFilter used for JOIN clauses and other forms
+// of multi-table filters.
 type JoinFilter struct {
 	AndFilter
 	QuotedJoinTable string
