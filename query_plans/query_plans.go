@@ -190,6 +190,32 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 	return
 }
 
+// Extend returns an extended query, using extensions for the
+// gorp.Dialect stored as your dbmap's Dialect field.  You will need
+// to use a type assertion on the return value.  As an example,
+// postgresql supports a form of joining tables for use in an update
+// statement.  You can still only *assign* values on the main
+// reference table, but you can use values from other joined tables
+// both during assignment and in the where clause.  Here's what it
+// would look like:
+//
+//     updateCount, err := dbMap.Query(ref).Extend().(extensions.Postgres).
+//         Assign(&ref.Date, time.Now()).
+//         Join(mapRef).On().
+//         Equal(&mapRef.Foreign, &ref.Id).
+//         Update()
+//
+// If you want to make your own extensions, just make sure to register
+// the constructor using RegisterExtension().
+func (plan *QueryPlan) Extend() interface{} {
+	extendedQuery, err := LoadExtension(plan.dbMap.Dialect, plan)
+	if err != nil {
+		plan.Errors = append(plan.Errors, err)
+		return nil
+	}
+	return extendedQuery
+}
+
 // Assign sets up an assignment operation to assign the passed in
 // value to the passed in field pointer.  This is used for creating
 // UPDATE or INSERT queries.

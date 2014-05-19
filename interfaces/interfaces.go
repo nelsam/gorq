@@ -270,6 +270,10 @@ type WhereQuery interface {
 // Note that many SQL languages have extensions to the SQL standard,
 // and we provide some support for them in the extended package.
 type Query interface {
+	// Before calling any methods on a query, you can use Extend() to
+	// use a registered extension query type.
+	Extend() interface{}
+
 	// A query that has had no methods called can both perform
 	// assignments and still have a where clause.
 	Assigner
