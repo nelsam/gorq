@@ -267,7 +267,7 @@ type WhereQuery interface {
 //     results, err := q.Select()
 //
 // Note that many SQL languages have extensions to the SQL standard,
-// and we provide some support for them in the extended_sql package.
+// and we provide some support for them in the extended package.
 type Query interface {
 	// A query that has had no methods called can both perform
 	// assignments and still have a where clause.
