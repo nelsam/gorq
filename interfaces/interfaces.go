@@ -162,6 +162,7 @@ type JoinQuery interface {
 	// Most languages have extensions to support what are effectively
 	// join operations on other statements, but since that is not part
 	// of the standard, it is not supported here.
+	SelectManipulator
 	Selector
 }
 
