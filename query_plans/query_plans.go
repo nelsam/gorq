@@ -538,9 +538,11 @@ func (plan *QueryPlan) Update() (int64, error) {
 	}
 	if joinWhereClause != "" {
 		if whereClause == "" {
-			whereClause = " where"
+			whereClause = " where "
+		} else {
+			whereClause += " and "
 		}
-		whereClause += " " + joinWhereClause
+		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
 	res, err := plan.executor.Exec(buffer.String(), plan.args...)
@@ -576,9 +578,11 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	}
 	if joinWhereClause != "" {
 		if whereClause == "" {
-			whereClause = " where"
+			whereClause = " where "
+		} else {
+			whereClause += " and "
 		}
-		whereClause += " " + joinWhereClause
+		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
 	res, err := plan.executor.Exec(buffer.String(), plan.args...)
