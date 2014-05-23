@@ -1,3 +1,6 @@
+[![GoDoc](https://godoc.org/github.com/nelsam/gorp_queries?status.png)](http://godoc.org/github.com/nelsam/gorp_queries)
+
+
 gorp_queries
 ============
 
