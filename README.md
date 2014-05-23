@@ -31,7 +31,7 @@ import "github.com/nelsam/gorp_queries"
 Then, set up your DB map using `gorp_queries.DbMap` and use gorp as
 normal.  `gorp_queries.DbMap` includes all of the functionality of
 `gorp.DbMap`, with a few extensions.  See
-[the documentation for gorp_queries](godoc.org/github.com/nelsam/gorp_queries)
+[the documentation for gorp_queries](http://godoc.org/github.com/nelsam/gorp_queries)
 for details on the extensions.  See
-[the documentation for gorp](godoc.org/github.com/coopernurse/gorp)
+[the documentation for gorp](http://godoc.org/github.com/coopernurse/gorp)
 for details on the functionality provided by gorp.
