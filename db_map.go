@@ -6,6 +6,11 @@ import (
 	"github.com/nelsam/gorp_queries/query_plans"
 )
 
+type SqlExecutor interface {
+	gorp.SqlExecutor
+	Query(interface{}) interfaces.Query
+}
+
 // DbMap embeds "github.com/coopernurse/gorp".DbMap and adds query
 // methods to it.
 type DbMap struct {
