@@ -166,6 +166,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 	invTest, err := dbmap.Query(emptyInv).
 		Where().
 		Equal(&emptyInv.IsPaid, true).
+		Limit(1).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
@@ -212,6 +213,21 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 		suite.T().FailNow()
 	}
 	if len(invTest) != 2 {
+		suite.T().Errorf("Expected two inv")
+		suite.T().FailNow()
+	}
+
+	invTest, err = dbmap.Query(emptyInv).
+		Where().
+		Greater(&emptyInv.Updated, 1).
+		Offset(1).
+		Limit(1).
+		Select()
+	if err != nil {
+		suite.T().Errorf("Failed to select: %s", err)
+		suite.T().FailNow()
+	}
+	if len(invTest) != 1 {
 		suite.T().Errorf("Expected two inv")
 		suite.T().FailNow()
 	}
