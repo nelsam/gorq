@@ -86,10 +86,9 @@ func TestQueryLanguageSqlite(t *testing.T) {
 func (suite *QueryLanguageTestSuite) SetupTest() {
 	suite.Map.AddTable(OverriddenInvoice{}).SetKeys(false, "Id")
 	err := suite.Map.CreateTablesIfNotExists()
-	if err == nil {
-		suite.CanTest = true
-	} else {
+	if err != nil {
 		suite.T().Errorf("Cannot run tests: %s", err)
+		suite.T().FailNow()
 	}
 }
 
@@ -102,10 +101,6 @@ func (suite *QueryLanguageTestSuite) TearDownSuite() {
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
-	if !suite.CanTest {
-		return
-	}
-
 	dbmap := suite.Map
 
 	emptyInv := new(OverriddenInvoice)
