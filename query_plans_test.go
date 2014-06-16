@@ -98,7 +98,6 @@ func (suite *QueryLanguageTestSuite) TearDownTest() {
 }
 
 func (suite *QueryLanguageTestSuite) TearDownSuite() {
-	suite.Map.Exec("drop table OverriddenInvoice")
 	suite.Map.Db.Close()
 }
 
@@ -165,16 +164,14 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 
 	invTest, err := dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, true).
+		True(&emptyInv.IsPaid).
 		Limit(1).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 0 {
 		suite.T().Errorf("Expected zero paid invoices")
-		suite.T().FailNow()
 	}
 
 	count, err := dbmap.Query(emptyInv).
@@ -184,24 +181,20 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 		Update()
 	if err != nil {
 		suite.T().Errorf("Failed to update: %s", err)
-		suite.T().FailNow()
 	}
 	if count != 1 {
 		suite.T().Errorf("Expected to update one invoice")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, true).
+		True(&emptyInv.IsPaid).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 1 {
-		suite.T().Errorf("Expected one paid invoice")
-		suite.T().FailNow()
+		suite.T().Errorf("Expected one paid invoice, not %d", len(invTest))
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
@@ -210,11 +203,9 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 2 {
 		suite.T().Errorf("Expected two inv")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
@@ -225,51 +216,43 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 1 {
 		suite.T().Errorf("Expected two inv")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, true).
+		True(&emptyInv.IsPaid).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 1 {
 		suite.T().Errorf("Expected one inv")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, false).
+		False(&emptyInv.IsPaid).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 3 {
 		suite.T().Errorf("Expected three inv")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, false).
+		False(&emptyInv.IsPaid).
 		Equal(&emptyInv.Created, 2).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 1 {
 		suite.T().Errorf("Expected one inv")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
@@ -278,37 +261,31 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 3 {
 		suite.T().Errorf("Expected three invoices for ORed query")
-		suite.T().FailNow()
 	}
 
 	count, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, true).
+		True(&emptyInv.IsPaid).
 		Delete()
 	if err != nil {
 		suite.T().Errorf("Failed to delete: %s", err)
-		suite.T().FailNow()
 	}
 	if count != 1 {
 		suite.T().Errorf("Expected one invoice to be deleted")
-		suite.T().FailNow()
 	}
 
 	invTest, err = dbmap.Query(emptyInv).
 		Where().
-		Equal(&emptyInv.IsPaid, true).
+		True(&emptyInv.IsPaid).
 		Select()
 	if err != nil {
 		suite.T().Errorf("Failed to select: %s", err)
-		suite.T().FailNow()
 	}
 	if len(invTest) != 0 {
 		suite.T().Errorf("Expected no paid invoices after deleting all paid invoices")
-		suite.T().FailNow()
 	}
 }
 

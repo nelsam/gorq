@@ -6,6 +6,7 @@ import (
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"
+	"github.com/nelsam/gorp_queries/dialects"
 	"reflect"
 	"strings"
 )
@@ -123,6 +124,14 @@ type QueryPlan struct {
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
 func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
+	// Handle non-standard dialects
+	switch src := m.Dialect.(type) {
+	case gorp.MySQLDialect:
+		m.Dialect = dialects.MySQLDialect{src}
+	case gorp.SqliteDialect:
+		m.Dialect = dialects.SqliteDialect{src}
+	default:
+	}
 	plan := &QueryPlan{
 		dbMap:    m,
 		executor: exec,
@@ -311,6 +320,18 @@ func (plan *QueryPlan) NotNull(fieldPtr interface{}) interfaces.WhereQuery {
 	return plan.Filter(filters.NotNull(fieldPtr))
 }
 
+// True adds a column comparison to the where clause (tests for
+// column's truthiness)
+func (plan *QueryPlan) True(fieldPtr interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.True(fieldPtr))
+}
+
+// False adds a NOT column comparison to the where clause (tests for
+// column's negated truthiness)
+func (plan *QueryPlan) False(fieldPtr interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.False(fieldPtr))
+}
+
 // OrderBy adds a column to the order by clause.  The direction is
 // optional - you may pass in an empty string to order in the default
 // direction for the given column.
@@ -448,12 +469,23 @@ func (plan *QueryPlan) selectQuery() (string, error) {
 		}
 		buffer.WriteString(groupBy)
 	}
+	// Nonstandard LIMIT clauses seem to have to come *before* the
+	// offset clause.
+	limiter, nonstandard := plan.dbMap.Dialect.(interfaces.NonstandardLimiter)
+	if plan.limit > 0 && nonstandard {
+		buffer.WriteString(" ")
+		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(plan.args))))
+		plan.args = append(plan.args, plan.limit)
+	}
 	if plan.offset > 0 {
 		buffer.WriteString(" offset ")
 		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
 		plan.args = append(plan.args, plan.offset)
 	}
-	if plan.limit > 0 {
+	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
+	if plan.limit > 0 && !nonstandard {
+		// Many dialects seem to ignore the SQL standard when it comes
+		// to the limit clause.
 		buffer.WriteString(" fetch next (")
 		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
 		plan.args = append(plan.args, plan.limit)
@@ -642,6 +674,16 @@ func (plan *JoinQueryPlan) NotNull(fieldPtr interface{}) interfaces.JoinQuery {
 	return plan
 }
 
+func (plan *JoinQueryPlan) True(fieldPtr interface{}) interfaces.JoinQuery {
+	plan.QueryPlan.True(fieldPtr)
+	return plan
+}
+
+func (plan *JoinQueryPlan) False(fieldPtr interface{}) interfaces.JoinQuery {
+	plan.QueryPlan.False(fieldPtr)
+	return plan
+}
+
 // An AssignQueryPlan is, for all intents and purposes, a QueryPlan.
 // The only difference is the return type of Where() and all of the
 // various where clause operations.  This is intended to be used for
@@ -713,5 +755,15 @@ func (plan *AssignQueryPlan) Null(fieldPtr interface{}) interfaces.UpdateQuery {
 
 func (plan *AssignQueryPlan) NotNull(fieldPtr interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
+	return plan
+}
+
+func (plan *AssignQueryPlan) True(fieldPtr interface{}) interfaces.UpdateQuery {
+	plan.QueryPlan.True(fieldPtr)
+	return plan
+}
+
+func (plan *AssignQueryPlan) False(fieldPtr interface{}) interfaces.UpdateQuery {
+	plan.QueryPlan.False(fieldPtr)
 	return plan
 }

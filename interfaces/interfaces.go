@@ -4,6 +4,13 @@ import (
 	"github.com/nelsam/gorp_queries/filters"
 )
 
+// A NonstandardLimiter is a type of query dialect that doesn't
+// support the SQL standard method of limiting query results (i.e.
+// fetch (N) rows only).  It instead returns its own LIMIT clause.
+type NonstandardLimiter interface {
+	Limit(interface{}) string
+}
+
 // An Updater is a query that can execute UPDATE statements.
 type Updater interface {
 	// Update executes an update statement and returns the updated row
@@ -119,6 +126,8 @@ type UpdateQuery interface {
 	GreaterOrEqual(fieldPtr interface{}, value interface{}) UpdateQuery
 	NotNull(fieldPtr interface{}) UpdateQuery
 	Null(fieldPtr interface{}) UpdateQuery
+	True(fieldPtr interface{}) UpdateQuery
+	False(fieldPtr interface{}) UpdateQuery
 
 	// An UpdateQuery has both assignments and a where clause, which
 	// means that it must be an update statement.
@@ -154,6 +163,8 @@ type JoinQuery interface {
 	GreaterOrEqual(fieldPtr interface{}, value interface{}) JoinQuery
 	NotNull(fieldPtr interface{}) JoinQuery
 	Null(fieldPtr interface{}) JoinQuery
+	True(fieldPtr interface{}) JoinQuery
+	False(fieldPtr interface{}) JoinQuery
 
 	Wherer
 
@@ -186,6 +197,8 @@ type WhereQuery interface {
 	GreaterOrEqual(fieldPtr interface{}, value interface{}) WhereQuery
 	NotNull(fieldPtr interface{}) WhereQuery
 	Null(fieldPtr interface{}) WhereQuery
+	True(fieldPtr interface{}) WhereQuery
+	False(fieldPtr interface{}) WhereQuery
 
 	// A WhereQuery is returned when Where() has been called before
 	// Assign(), which means it must be a select or delete statement.

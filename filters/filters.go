@@ -153,7 +153,7 @@ func (filter *NotFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dia
 	if err != nil {
 		return "", nil, err
 	}
-	return "NOT " + whereStr, args, nil
+	return "not " + whereStr, args, nil
 }
 
 // A NullFilter is a filter that compares a field to null
@@ -166,7 +166,7 @@ func (filter *NullFilter) Where(structMap TableAndColumnLocater, dialect gorp.Di
 	if err != nil {
 		return "", nil, err
 	}
-	return column + " IS NULL", nil, nil
+	return column + " is null", nil, nil
 }
 
 // A NotNullFilter is a filter that compares a field to null
@@ -179,7 +179,20 @@ func (filter *NotNullFilter) Where(structMap TableAndColumnLocater, dialect gorp
 	if err != nil {
 		return "", nil, err
 	}
-	return column + " IS NOT NULL", nil, nil
+	return column + " is not null", nil, nil
+}
+
+// A TrueFilter simply filters on a boolean column's truthiness.
+type TrueFilter struct {
+	addr interface{}
+}
+
+func (filter *TrueFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+	column, err := structMap.LocateTableAndColumn(filter.addr)
+	if err != nil {
+		return "", nil, err
+	}
+	return column, nil, nil
 }
 
 // Or returns a filter that will OR all passed in filters
@@ -205,6 +218,16 @@ func Null(fieldPtr interface{}) Filter {
 // NotNull returns a filter for fieldPtr IS NOT NULL
 func NotNull(fieldPtr interface{}) Filter {
 	return &NotNullFilter{fieldPtr}
+}
+
+// True returns a filter for fieldPtr's truthiness
+func True(fieldPtr interface{}) Filter {
+	return &TrueFilter{fieldPtr}
+}
+
+// False returns a filter for NOT fieldPtr
+func False(fieldPtr interface{}) Filter {
+	return Not(True(fieldPtr))
 }
 
 // Equal returns a filter for fieldPtr == value
