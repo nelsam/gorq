@@ -106,6 +106,7 @@ type QueryPlan struct {
 
 	table          *gorp.TableMap
 	dbMap          *gorp.DbMap
+	quotedTable    string
 	executor       gorp.SqlExecutor
 	target         reflect.Value
 	colMap         structColumnMap
@@ -424,33 +425,81 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	return err
 }
 
-func (plan *QueryPlan) selectQuery() (string, error) {
-	if len(plan.Errors) > 0 {
-		return "", plan.Errors[0]
+func (plan *QueryPlan) Count() (int64, error) {
+	buffer := new(bytes.Buffer)
+	buffer.WriteString("select count(*)")
+	if err := plan.writeSelectSuffix(buffer); err != nil {
+		return -1, err
 	}
-	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-	buffer := bytes.Buffer{}
+	return plan.executor.SelectInt(buffer.String(), plan.args...)
+}
+
+func (plan *QueryPlan) CountDistinct(fields ...interface{}) (int64, error) {
+	buffer := new(bytes.Buffer)
+	buffer.WriteString("select count(distinct")
+	for index, field := range fields {
+		if index == 0 {
+			buffer.WriteString("(")
+		} else {
+			buffer.WriteString(",")
+		}
+		column, err := plan.colMap.LocateTableAndColumn(field)
+		if err != nil {
+			return -1, err
+		}
+		buffer.WriteString(column)
+	}
+	buffer.WriteString(")")
+	return plan.executor.SelectInt(buffer.String(), plan.args...)
+}
+
+func (plan *QueryPlan) QuotedTable() string {
+	if plan.quotedTable == "" {
+		plan.quotedTable = plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+	}
+	return plan.quotedTable
+}
+
+func (plan *QueryPlan) selectQuery() (string, error) {
+	buffer := new(bytes.Buffer)
+	if err := plan.writeSelectColumns(buffer); err != nil {
+		return "", err
+	}
+	if err := plan.writeSelectSuffix(buffer); err != nil {
+		return "", err
+	}
+	return buffer.String(), nil
+}
+
+func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
+	if len(plan.Errors) > 0 {
+		return plan.Errors[0]
+	}
 	buffer.WriteString("select ")
 	for index, col := range plan.table.Columns {
 		if !col.Transient {
 			if index != 0 {
 				buffer.WriteString(",")
 			}
-			buffer.WriteString(quotedTable)
+			buffer.WriteString(plan.QuotedTable())
 			buffer.WriteString(".")
 			buffer.WriteString(plan.dbMap.Dialect.QuoteField(col.ColumnName))
 		}
 	}
+	return nil
+}
+
+func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 	buffer.WriteString(" from ")
-	buffer.WriteString(quotedTable)
+	buffer.WriteString(plan.QuotedTable())
 	joinClause, err := plan.selectJoinClause()
 	if err != nil {
-		return "", err
+		return err
 	}
 	buffer.WriteString(joinClause)
 	whereClause, err := plan.whereClause()
 	if err != nil {
-		return "", err
+		return err
 	}
 	buffer.WriteString(whereClause)
 	for index, orderBy := range plan.orderBy {
@@ -491,7 +540,7 @@ func (plan *QueryPlan) selectQuery() (string, error) {
 		plan.args = append(plan.args, plan.limit)
 		buffer.WriteString(") rows only")
 	}
-	return buffer.String(), nil
+	return nil
 }
 
 // Insert will run this query plan as an INSERT statement.

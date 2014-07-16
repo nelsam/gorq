@@ -44,6 +44,16 @@ type Selector interface {
 	// errors encountered.  The resulting rows will be appended to the
 	// passed in target, which must be a pointer to a slice.
 	SelectToTarget(target interface{}) error
+
+	// Count executes a select statement that just returns a count of
+	// the number of rows that would be returned.
+	Count() (int64, error)
+
+	// CountDistinct executes a select statement that returns a count of
+	// unique rows.  If you pass in references to model fields, rows
+	// will only be counted as unique if the passed in fields are
+	// unique.
+	CountDistinct(...interface{}) (int64, error)
 }
 
 // A SelectManipulator is a query that will return a list of results
