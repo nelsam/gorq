@@ -1,18 +1,16 @@
 package gorp_queries
 
 import (
-	//"log"
-	//"os"
 	"testing"
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorp_queries/filters"
-	//"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/ziutek/mymysql/godrv"
 	"database/sql"
+	"fmt"
 )
 
 type Invoice struct {
@@ -29,10 +27,53 @@ type OverriddenInvoice struct {
 	Id string
 }
 
+var testInvoices = []OverriddenInvoice{
+	OverriddenInvoice{
+		Id: "1",
+		Invoice: Invoice{
+			Created: 1,
+			Updated: 1,
+			Memo: "test_memo",
+			PersonId: 1,
+			IsPaid: false,
+		},
+	},
+	OverriddenInvoice{
+		Id: "2",
+		Invoice: Invoice{
+			Created: 2,
+			Updated: 2,
+			Memo: "another_test_memo",
+			PersonId: 2,
+			IsPaid: false,
+		},
+	},
+	OverriddenInvoice{
+		Id: "3",
+		Invoice: Invoice{
+			Created: 1,
+			Updated: 3,
+			Memo: "test_memo",
+			PersonId: 1,
+			IsPaid: false,
+		},
+	},
+	OverriddenInvoice{
+		Id: "4",
+		Invoice: Invoice{
+			Created: 2,
+			Updated: 1,
+			Memo: "another_test_memo",
+			PersonId: 1,
+			IsPaid: true,
+		},
+	},
+}
+
 type QueryLanguageTestSuite struct {
 	suite.Suite
 	Map *DbMap
-	CanTest bool
+	Ref *OverriddenInvoice
 }
 
 func runQueryLanguageSuite(t *testing.T, dialect gorp.Dialect, connection *sql.DB) {
@@ -84,12 +125,13 @@ func TestQueryLanguageSqlite(t *testing.T) {
 }
 
 func (suite *QueryLanguageTestSuite) SetupTest() {
+	suite.Ref = new(OverriddenInvoice)
 	suite.Map.AddTable(OverriddenInvoice{}).SetKeys(false, "Id")
 	err := suite.Map.CreateTablesIfNotExists()
-	if err != nil {
-		suite.T().Errorf("Cannot run tests: %s", err)
+	if !suite.NoError(err) {
 		suite.T().FailNow()
 	}
+	suite.insertInvoices()
 }
 
 func (suite *QueryLanguageTestSuite) TearDownTest() {
@@ -100,187 +142,209 @@ func (suite *QueryLanguageTestSuite) TearDownSuite() {
 	suite.Map.Db.Close()
 }
 
-func (suite *QueryLanguageTestSuite) TestQueryLanguage() {
-	dbmap := suite.Map
-
-	emptyInv := new(OverriddenInvoice)
-
-	err := dbmap.Query(emptyInv).
-		Assign(&emptyInv.Id, "1").
-		Assign(&emptyInv.Created, 1).
-		Assign(&emptyInv.Updated, 1).
-		Assign(&emptyInv.Memo, "test_memo").
-		Assign(&emptyInv.PersonId, 1).
-		Assign(&emptyInv.IsPaid, false).
-		Insert()
-	if err != nil {
-		suite.T().Errorf("Failed to insert: %s", err)
-		suite.T().FailNow()
+// insertInvoices() runs some insert queries to ensure that there is
+// data available for the other queries.  If any error occurs, it will
+// call suite.T().FailNow() to skip testing the rest of the suite.
+func (suite *QueryLanguageTestSuite) insertInvoices() {
+	for _, inv := range testInvoices {
+		err := suite.Map.Query(suite.Ref).
+			Assign(&suite.Ref.Id, inv.Id).
+			Assign(&suite.Ref.Created, inv.Created).
+			Assign(&suite.Ref.Updated, inv.Updated).
+			Assign(&suite.Ref.Memo, inv.Memo).
+			Assign(&suite.Ref.PersonId, inv.PersonId).
+			Assign(&suite.Ref.IsPaid, inv.IsPaid).
+			Insert()
+		if !suite.NoError(err) {
+			suite.T().FailNow()
+		}
 	}
+}
 
-	err = dbmap.Query(emptyInv).
-		Assign(&emptyInv.Id, "2").
-		Assign(&emptyInv.Created, 2).
-		Assign(&emptyInv.Updated, 2).
-		Assign(&emptyInv.Memo, "another_test_memo").
-		Assign(&emptyInv.PersonId, 2).
-		Assign(&emptyInv.IsPaid, false).
-		Insert()
-	if err != nil {
-		suite.T().Errorf("Failed to insert: %s", err)
-		suite.T().FailNow()
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectSimple() {
+	invTest, err := suite.Map.Query(suite.Ref).Select()
+	if suite.NoError(err) {
+		suite.Equal(len(invTest), len(testInvoices))
 	}
+}
 
-	err = dbmap.Query(emptyInv).
-		Assign(&emptyInv.Id, "3").
-		Assign(&emptyInv.Created, 1).
-		Assign(&emptyInv.Updated, 3).
-		Assign(&emptyInv.Memo, "test_memo").
-		Assign(&emptyInv.PersonId, 1).
-		Assign(&emptyInv.IsPaid, false).
-		Insert()
-	if err != nil {
-		suite.T().Errorf("Failed to insert: %s", err)
-		suite.T().FailNow()
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountSimple() {
+	count, err := suite.Map.Query(suite.Ref).Count()
+	if suite.NoError(err) {
+		suite.Equal(count, len(testInvoices))
 	}
+}
 
-	err = dbmap.Query(emptyInv).
-		Assign(&emptyInv.Id, "4").
-		Assign(&emptyInv.Created, 2).
-		Assign(&emptyInv.Updated, 1).
-		Assign(&emptyInv.Memo, "another_test_memo").
-		Assign(&emptyInv.PersonId, 1).
-		Assign(&emptyInv.IsPaid, false).
-		Insert()
-	if err != nil {
-		suite.T().Errorf("Failed to insert: %s", err)
-		suite.T().FailNow()
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountDistinctSimple() {
+	count, err := suite.Map.Query(suite.Ref).CountDistinct()
+	if suite.NoError(err) {
+		suite.True(count > 0)
 	}
+}
 
-	invTest, err := dbmap.Query(emptyInv).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountDistinctFields() {
+	count, err := suite.Map.Query(suite.Ref).CountDistinct(&suite.Ref.Created, &suite.Ref.Memo)
+	if suite.NoError(err) {
+		expectedCount := 0
+		used := make(map[string]bool)
+		for _, inv := range testInvoices {
+			key := fmt.Sprintf("%s :: %d", inv.Memo, inv.Created)
+			if _, ok := used[key]; !ok {
+				expectedCount++
+				used[key] = true
+			}
+		}
+		suite.Equal(count, expectedCount)
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectEqual() {
+	isPaidCount := 0
+	for _, inv := range testInvoices {
+		if inv.IsPaid {
+			isPaidCount++
+		}
+	}
+	if isPaidCount == 0 {
+		panic("Cannot continue test without at least one paid invoice.")
+	}
+	invTest, err := suite.Map.Query(suite.Ref).
 		Where().
-		True(&emptyInv.IsPaid).
+		True(&suite.Ref.IsPaid).
 		Limit(1).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
+	if suite.NoError(err) {
+		suite.Equal(len(invTest), 1)
 	}
-	if len(invTest) != 0 {
-		suite.T().Errorf("Expected zero paid invoices")
-	}
+}
 
-	count, err := dbmap.Query(emptyInv).
-		Assign(&emptyInv.IsPaid, true).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
+	var (
+		targetInv OverriddenInvoice
+		isPaidCount int64
+	)
+	for _, inv := range testInvoices {
+		if inv.IsPaid {
+			isPaidCount++
+		} else if targetInv.Id == "" {
+			targetInv = inv
+		}
+	}
+	count, err := suite.Map.Query(suite.Ref).
+		Assign(&suite.Ref.IsPaid, true).
 		Where().
-		Equal(&emptyInv.Id, "4").
+		Equal(&suite.Ref.Id, targetInv.Id).
 		Update()
-	if err != nil {
-		suite.T().Errorf("Failed to update: %s", err)
-	}
-	if count != 1 {
-		suite.T().Errorf("Expected to update one invoice")
+	if suite.NoError(err) {
+		suite.Equal(count, 1)
+		isPaidCount += count
 	}
 
-	invTest, err = dbmap.Query(emptyInv).
+	invTest, err := suite.Map.Query(suite.Ref).
 		Where().
-		True(&emptyInv.IsPaid).
+		True(&suite.Ref.IsPaid).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
+	if suite.NoError(err) {
+		suite.Equal(len(invTest), isPaidCount)
 	}
-	if len(invTest) != 1 {
-		suite.T().Errorf("Expected one paid invoice, not %d", len(invTest))
-	}
+}
 
-	invTest, err = dbmap.Query(emptyInv).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater() {
+	invTest, err := suite.Map.Query(suite.Ref).
 		Where().
-		Greater(&emptyInv.Updated, 1).
+		Greater(&suite.Ref.Updated, 1).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
-	}
-	if len(invTest) != 2 {
-		suite.T().Errorf("Expected two inv")
+	if suite.NoError(err) {
+		expectedCount := 0
+		for _, inv := range testInvoices {
+			if inv.Updated > 1 {
+				expectedCount++
+			}
+		}
+		suite.Equal(len(invTest), expectedCount)
 	}
 
-	invTest, err = dbmap.Query(emptyInv).
+	invTest, err = suite.Map.Query(suite.Ref).
 		Where().
-		Greater(&emptyInv.Updated, 1).
+		Greater(&suite.Ref.Updated, 1).
 		Offset(1).
 		Limit(1).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
+	if suite.NoError(err) {
+		suite.Equal(len(invTest), 1)
 	}
-	if len(invTest) != 1 {
-		suite.T().Errorf("Expected two inv")
-	}
+}
 
-	invTest, err = dbmap.Query(emptyInv).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalse() {
+	invTest, err := suite.Map.Query(suite.Ref).
 		Where().
-		True(&emptyInv.IsPaid).
+		False(&suite.Ref.IsPaid).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
+	if suite.NoError(err) {
+		expectedCount := 0
+		for _, inv := range testInvoices {
+			if !inv.IsPaid {
+				expectedCount++
+			}
+		}
+		suite.Equal(len(invTest), expectedCount)
 	}
-	if len(invTest) != 1 {
-		suite.T().Errorf("Expected one inv")
-	}
+}
 
-	invTest, err = dbmap.Query(emptyInv).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalseAndEqual() {
+	count, err := suite.Map.Query(suite.Ref).
 		Where().
-		False(&emptyInv.IsPaid).
+		False(&suite.Ref.IsPaid).
+		Equal(&suite.Ref.Created, 2).
+		Count()
+	if suite.NoError(err) {
+		expectedCount := 0
+		for _, inv := range testInvoices {
+			if !inv.IsPaid && inv.Created == 2 {
+				expectedCount++
+			}
+		}
+		suite.Equal(count, expectedCount)
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectWithFilter() {
+	invTest, err := suite.Map.Query(suite.Ref).
+		Where().
+		Filter(filters.Or(filters.Equal(&suite.Ref.Memo, "another_test_memo"), filters.Equal(&suite.Ref.Updated, 3))).
 		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
+	if suite.NoError(err) {
+		expectedCount := 0
+		for _, inv := range testInvoices {
+			if inv.Memo == "another_test_memo" || inv.Updated == 3 {
+				expectedCount++
+			}
+		}
+		suite.Equal(len(invTest), expectedCount)
 	}
-	if len(invTest) != 3 {
-		suite.T().Errorf("Expected three inv")
-	}
+}
 
-	invTest, err = dbmap.Query(emptyInv).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
+	count, err := suite.Map.Query(suite.Ref).
 		Where().
-		False(&emptyInv.IsPaid).
-		Equal(&emptyInv.Created, 2).
-		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
-	}
-	if len(invTest) != 1 {
-		suite.T().Errorf("Expected one inv")
-	}
-
-	invTest, err = dbmap.Query(emptyInv).
-		Where().
-		Filter(filters.Or(filters.Equal(&emptyInv.Memo, "another_test_memo"), filters.Equal(&emptyInv.Updated, 3))).
-		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
-	}
-	if len(invTest) != 3 {
-		suite.T().Errorf("Expected three invoices for ORed query")
-	}
-
-	count, err = dbmap.Query(emptyInv).
-		Where().
-		True(&emptyInv.IsPaid).
+		False(&suite.Ref.IsPaid).
 		Delete()
-	if err != nil {
-		suite.T().Errorf("Failed to delete: %s", err)
-	}
-	if count != 1 {
-		suite.T().Errorf("Expected one invoice to be deleted")
-	}
+	if suite.NoError(err) {
+		expectedCount := 0
+		for _, inv := range testInvoices {
+			if !inv.IsPaid {
+				expectedCount++
+			}
+		}
+		suite.Equal(count, expectedCount)
 
-	invTest, err = dbmap.Query(emptyInv).
-		Where().
-		True(&emptyInv.IsPaid).
-		Select()
-	if err != nil {
-		suite.T().Errorf("Failed to select: %s", err)
-	}
-	if len(invTest) != 0 {
-		suite.T().Errorf("Expected no paid invoices after deleting all paid invoices")
+		count, err = suite.Map.Query(suite.Ref).
+			Where().
+			False(&suite.Ref.IsPaid).
+			Count()
+		if suite.NoError(err) {
+			suite.Equal(count, 0, "No unpaid invoices should exist after deleting all unpaid invoices")
+		}
 	}
 }
 

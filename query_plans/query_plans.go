@@ -377,6 +377,9 @@ func (plan *QueryPlan) Offset(offset int64) interfaces.SelectQuery {
 }
 
 func (plan *QueryPlan) whereClause() (string, error) {
+	if plan.filters == nil {
+		return "", nil
+	}
 	where, whereArgs, err := plan.filters.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
 	if err != nil {
 		return "", err
