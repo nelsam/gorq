@@ -14,7 +14,7 @@ func (wrapper functionWrapper) ActualValue() interface{} {
 	return wrapper.actualValue
 }
 
-func (wrapper functionWrapper) WriteSql(sqlValue string) string {
+func (wrapper functionWrapper) WrapSql(sqlValue string) string {
 	return fmt.Sprintf("%s(%s)", wrapper.functionName, sqlValue)
 }
 

@@ -11,10 +11,10 @@ type SqlWrapper interface {
 	// column in the SQL query.
 	ActualValue() interface{}
 
-	// WriteSql should take the generated string that is being used to
+	// WrapSql should take the generated string that is being used to
 	// represent the ActualValue() in the query, and wrap it in
 	// whatever SQL this SqlWrapper needs to add to the query.
-	WriteSql(string) string
+	WrapSql(string) string
 }
 
 // A TableAndColumnLocater takes a struct field reference and returns
@@ -163,7 +163,7 @@ func (filter *ComparisonFilter) queryValue(columnOrValue interface{}, bindIdx in
 		filter.args = append(filter.args, columnOrValue)
 	}
 	if isSqlWrapper {
-		sqlValue = sqlWrapper.WriteSql(sqlValue)
+		sqlValue = sqlWrapper.WrapSql(sqlValue)
 	}
 	filter.sql.WriteString(sqlValue)
 	return
