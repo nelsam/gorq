@@ -6,10 +6,18 @@ gorp_queries
 
 ### WARNING:
 
-*This extension is not ready yet.  It was originally
-created as a patch directly to gorp, and is in the process of
-being moved and restructured as an extension.  Everything (even
-the repository name) is subject to change until further notice.*
+This extension is very new.  It was originally written directly in the
+gorp code base, but as it grew, I decided it would be best to submit
+it as a separate package.  I have it in a place, currently, where it
+appears to work for sqlite, MySQL, and PostgreSQL.  However, I *only*
+use PostgreSQL, myself, so if you use sqlite or MySQL, you'll be
+relying on the test coverage to ensure that I don't break anything.
+
+Test coverage is pretty poor right now, so if you start using this and
+run in to problems, please submit an issue, preferably with a pull
+request that includes a failing test.  I will be adding tests over
+time, as well - my goal is to get to (and stay at) 80% coverage; I
+just don't have as much time as I'd like.
 
 ## About
 
