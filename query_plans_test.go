@@ -324,6 +324,39 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
 	}
 }
 
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
+	inv := OverriddenInvoice{
+		Id: "79",
+		Invoice: Invoice{
+			Created: 2,
+			Updated: 1,
+			Memo: "A Test Memo With Capitals",
+			PersonId: 1,
+			IsPaid: true,
+		},
+	}
+	err := suite.Map.Query(&inv).
+		Assign(&inv.Id, inv.Id).
+		Assign(&inv.Created, inv.Created).
+		Assign(&inv.Updated, inv.Updated).
+		Assign(&inv.Memo, inv.Memo).
+		Assign(&inv.PersonId, inv.PersonId).
+		Assign(&inv.IsPaid, inv.IsPaid).
+		Insert()
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
+	invTest, err := suite.Map.Query(&inv).
+		Where().
+		Equal(Lower(&inv.Memo), "a test memo with capitals").
+		Select()
+	if suite.NoError(err) {
+		if suite.Equal(len(invTest), 1) {
+			suite.Equal(invTest[0].(*OverriddenInvoice).Memo, "A Test Memo With Capitals")
+		}
+	}
+}
+
 // func BenchmarkSqlQuerySelect(b *testing.B) {
 // 	b.StopTimer()
 // 	dbmap := newDbMap()
