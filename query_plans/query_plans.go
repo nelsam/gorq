@@ -437,25 +437,6 @@ func (plan *QueryPlan) Count() (int64, error) {
 	return plan.executor.SelectInt(buffer.String(), plan.args...)
 }
 
-func (plan *QueryPlan) CountDistinct(fields ...interface{}) (int64, error) {
-	buffer := new(bytes.Buffer)
-	buffer.WriteString("select count(distinct")
-	for index, field := range fields {
-		if index == 0 {
-			buffer.WriteString("(")
-		} else {
-			buffer.WriteString(",")
-		}
-		column, err := plan.colMap.LocateTableAndColumn(field)
-		if err != nil {
-			return -1, err
-		}
-		buffer.WriteString(column)
-	}
-	buffer.WriteString(")")
-	return plan.executor.SelectInt(buffer.String(), plan.args...)
-}
-
 func (plan *QueryPlan) QuotedTable() string {
 	if plan.quotedTable == "" {
 		plan.quotedTable = plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)

@@ -10,7 +10,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/ziutek/mymysql/godrv"
 	"database/sql"
-	"fmt"
 )
 
 type Invoice struct {
@@ -172,29 +171,6 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountSimple() {
 	count, err := suite.Map.Query(suite.Ref).Count()
 	if suite.NoError(err) {
 		suite.Equal(count, len(testInvoices))
-	}
-}
-
-func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountDistinctSimple() {
-	count, err := suite.Map.Query(suite.Ref).CountDistinct()
-	if suite.NoError(err) {
-		suite.True(count > 0)
-	}
-}
-
-func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountDistinctFields() {
-	count, err := suite.Map.Query(suite.Ref).CountDistinct(&suite.Ref.Created, &suite.Ref.Memo)
-	if suite.NoError(err) {
-		expectedCount := 0
-		used := make(map[string]bool)
-		for _, inv := range testInvoices {
-			key := fmt.Sprintf("%s :: %d", inv.Memo, inv.Created)
-			if _, ok := used[key]; !ok {
-				expectedCount++
-				used[key] = true
-			}
-		}
-		suite.Equal(count, expectedCount)
 	}
 }
 
