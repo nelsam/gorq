@@ -6,14 +6,14 @@ import (
 	"reflect"
 )
 
-type SqlWriter interface {
+type SqlWrapper interface {
 	// ActualValue should return the value to be used as a value or
 	// column in the SQL query.
 	ActualValue() interface{}
 
 	// WriteSql should take the generated string that is being used to
 	// represent the ActualValue() in the query, and wrap it in
-	// whatever SQL this SqlWriter needs to add to the query.
+	// whatever SQL this SqlWrapper needs to add to the query.
 	WriteSql(string) string
 }
 
@@ -148,9 +148,9 @@ func (filter *ComparisonFilter) Where(structMap TableAndColumnLocater, dialect g
 }
 
 func (filter *ComparisonFilter) queryValue(columnOrValue interface{}, bindIdx int) (err error) {
-	sqlWriter, isSqlWriter := columnOrValue.(SqlWriter)
-	if isSqlWriter {
-		columnOrValue = sqlWriter.ActualValue()
+	sqlWrapper, isSqlWrapper := columnOrValue.(SqlWrapper)
+	if isSqlWrapper {
+		columnOrValue = sqlWrapper.ActualValue()
 	}
 	var sqlValue string
 	if reflect.ValueOf(columnOrValue).Kind() == reflect.Ptr {
@@ -162,8 +162,8 @@ func (filter *ComparisonFilter) queryValue(columnOrValue interface{}, bindIdx in
 		sqlValue = filter.dialect.BindVar(bindIdx)
 		filter.args = append(filter.args, columnOrValue)
 	}
-	if isSqlWriter {
-		sqlValue = sqlWriter.WriteSql(sqlValue)
+	if isSqlWrapper {
+		sqlValue = sqlWrapper.WriteSql(sqlValue)
 	}
 	filter.sql.WriteString(sqlValue)
 	return
