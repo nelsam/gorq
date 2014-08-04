@@ -296,7 +296,7 @@ func LessOrEqual(fieldPtr interface{}, value interface{}) Filter {
 func Greater(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
 		left: fieldPtr,
-		comparison: "=",
+		comparison: ">",
 		right: value,
 	}
 }
@@ -305,7 +305,7 @@ func Greater(fieldPtr interface{}, value interface{}) Filter {
 func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
 		left: fieldPtr,
-		comparison: "=",
+		comparison: ">=",
 		right: value,
 	}
 }
