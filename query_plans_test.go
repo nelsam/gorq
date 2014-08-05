@@ -67,6 +67,16 @@ var testInvoices = []OverriddenInvoice{
 			IsPaid: true,
 		},
 	},
+	OverriddenInvoice{
+		Id: "5",
+		Invoice: Invoice{
+			Created: 1,
+			Updated: 3,
+			Memo: "test_memo",
+			PersonId: 1,
+			IsPaid: false,
+		},
+	},
 }
 
 type QueryLanguageTestSuite struct {
