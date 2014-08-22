@@ -1,15 +1,15 @@
 package gorp_queries
 
 import (
-	"testing"
+	"database/sql"
 	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorp_queries/filters"
-	"github.com/stretchr/testify/suite"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/nelsam/gorp_queries/filters"
+	"github.com/stretchr/testify/suite"
 	_ "github.com/ziutek/mymysql/godrv"
-	"database/sql"
+	"testing"
 )
 
 type Invoice struct {
@@ -30,51 +30,51 @@ var testInvoices = []OverriddenInvoice{
 	OverriddenInvoice{
 		Id: "1",
 		Invoice: Invoice{
-			Created: 1,
-			Updated: 1,
-			Memo: "test_memo",
+			Created:  1,
+			Updated:  1,
+			Memo:     "test_memo",
 			PersonId: 1,
-			IsPaid: false,
+			IsPaid:   false,
 		},
 	},
 	OverriddenInvoice{
 		Id: "2",
 		Invoice: Invoice{
-			Created: 2,
-			Updated: 2,
-			Memo: "another_test_memo",
+			Created:  2,
+			Updated:  2,
+			Memo:     "another_test_memo",
 			PersonId: 2,
-			IsPaid: false,
+			IsPaid:   false,
 		},
 	},
 	OverriddenInvoice{
 		Id: "3",
 		Invoice: Invoice{
-			Created: 1,
-			Updated: 3,
-			Memo: "test_memo",
+			Created:  1,
+			Updated:  3,
+			Memo:     "test_memo",
 			PersonId: 1,
-			IsPaid: false,
+			IsPaid:   false,
 		},
 	},
 	OverriddenInvoice{
 		Id: "4",
 		Invoice: Invoice{
-			Created: 2,
-			Updated: 1,
-			Memo: "another_test_memo",
+			Created:  2,
+			Updated:  1,
+			Memo:     "another_test_memo",
 			PersonId: 1,
-			IsPaid: true,
+			IsPaid:   true,
 		},
 	},
 	OverriddenInvoice{
 		Id: "5",
 		Invoice: Invoice{
-			Created: 1,
-			Updated: 3,
-			Memo: "test_memo",
+			Created:  1,
+			Updated:  3,
+			Memo:     "test_memo",
 			PersonId: 1,
-			IsPaid: false,
+			IsPaid:   false,
 		},
 	},
 }
@@ -170,6 +170,37 @@ func (suite *QueryLanguageTestSuite) insertInvoices() {
 	}
 }
 
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
+	var (
+		targetInv   OverriddenInvoice
+		isPaidCount int64
+	)
+	for _, inv := range testInvoices {
+		if inv.IsPaid {
+			isPaidCount++
+		} else if targetInv.Id == "" {
+			targetInv = inv
+		}
+	}
+	count, err := suite.Map.Query(suite.Ref).
+		Assign(&suite.Ref.IsPaid, true).
+		Where().
+		Equal(&suite.Ref.Id, targetInv.Id).
+		Update()
+	if suite.NoError(err) {
+		suite.Equal(count, 1)
+		isPaidCount += count
+	}
+
+	invTest, err := suite.Map.Query(suite.Ref).
+		Where().
+		True(&suite.Ref.IsPaid).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(len(invTest), isPaidCount)
+	}
+}
+
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectSimple() {
 	invTest, err := suite.Map.Query(suite.Ref).Select()
 	if suite.NoError(err) {
@@ -201,37 +232,6 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectEqual() {
 		Select()
 	if suite.NoError(err) {
 		suite.Equal(len(invTest), 1)
-	}
-}
-
-func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
-	var (
-		targetInv OverriddenInvoice
-		isPaidCount int64
-	)
-	for _, inv := range testInvoices {
-		if inv.IsPaid {
-			isPaidCount++
-		} else if targetInv.Id == "" {
-			targetInv = inv
-		}
-	}
-	count, err := suite.Map.Query(suite.Ref).
-		Assign(&suite.Ref.IsPaid, true).
-		Where().
-		Equal(&suite.Ref.Id, targetInv.Id).
-		Update()
-	if suite.NoError(err) {
-		suite.Equal(count, 1)
-		isPaidCount += count
-	}
-
-	invTest, err := suite.Map.Query(suite.Ref).
-		Where().
-		True(&suite.Ref.IsPaid).
-		Select()
-	if suite.NoError(err) {
-		suite.Equal(len(invTest), isPaidCount)
 	}
 }
 
@@ -338,11 +338,11 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
 	inv := OverriddenInvoice{
 		Id: "79",
 		Invoice: Invoice{
-			Created: 2,
-			Updated: 1,
-			Memo: "A Test Memo With Capitals",
+			Created:  2,
+			Updated:  1,
+			Memo:     "A Test Memo With Capitals",
 			PersonId: 1,
-			IsPaid: true,
+			IsPaid:   true,
 		},
 	}
 	err := suite.Map.Query(&inv).
@@ -364,6 +364,18 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
 		if suite.Equal(len(invTest), 1) {
 			suite.Equal(invTest[0].(*OverriddenInvoice).Memo, "A Test Memo With Capitals")
 		}
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseIn() {
+	ids := []interface{}{"1", "2", "3"}
+	ref := new(OverriddenInvoice)
+	count, err := suite.Map.Query(ref).
+		Where().
+		In(&ref.Id, ids...).
+		Count()
+	if suite.NoError(err) {
+		suite.Equal(count, len(ids))
 	}
 }
 

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp_queries/dialects"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"
-	"github.com/nelsam/gorp_queries/dialects"
 	"reflect"
 	"strings"
 )
@@ -279,6 +279,11 @@ func (plan *QueryPlan) Where(filterSlice ...filters.Filter) interfaces.WhereQuer
 func (plan *QueryPlan) Filter(filters ...filters.Filter) interfaces.WhereQuery {
 	plan.filters.Add(filters...)
 	return plan
+}
+
+// In adds a column IN (values...) comparison to the where clause.
+func (plan *QueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.In(fieldPtr, values...))
 }
 
 // Equal adds a column = value comparison to the where clause.
@@ -667,6 +672,11 @@ type JoinQueryPlan struct {
 	*QueryPlan
 }
 
+func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.JoinQuery {
+	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
 func (plan *JoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
@@ -748,6 +758,11 @@ func (plan *AssignQueryPlan) Where(filters ...filters.Filter) interfaces.UpdateQ
 
 func (plan *AssignQueryPlan) Filter(filters ...filters.Filter) interfaces.UpdateQuery {
 	plan.QueryPlan.Filter(filters...)
+	return plan
+}
+
+func (plan *AssignQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.UpdateQuery {
+	plan.QueryPlan.In(fieldPtr, values...)
 	return plan
 }
 

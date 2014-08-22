@@ -122,6 +122,7 @@ type UpdateQuery interface {
 	// query, which are combined in an AndFilter.  For example,
 	// Equal(fieldPtr, value) is just sugar for
 	// Filter(filters.Equal(fieldPtr, value)).
+	In(fieldPtr interface{}, values ...interface{}) UpdateQuery
 	Equal(fieldPtr interface{}, value interface{}) UpdateQuery
 	NotEqual(fieldPtr interface{}, value interface{}) UpdateQuery
 	Less(fieldPtr interface{}, value interface{}) UpdateQuery
@@ -159,6 +160,7 @@ type JoinQuery interface {
 	// These methods are sugar for filtering a join, the same as the
 	// methods on WhereQuery.  Equal(fieldPtr, value) is sugar for
 	// On(filters.Equal(fieldPtr, value)).
+	In(fieldPtr interface{}, values ...interface{}) JoinQuery
 	Equal(fieldPtr interface{}, value interface{}) JoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) JoinQuery
 	Less(fieldPtr interface{}, value interface{}) JoinQuery
@@ -193,6 +195,7 @@ type WhereQuery interface {
 	// query, which are combined in an AndFilter.  For example,
 	// Equal(fieldPtr, value) is just sugar for
 	// Filter(filters.Equal(fieldPtr, value)).
+	In(fieldPtr interface{}, values ...interface{}) WhereQuery
 	Equal(fieldPtr interface{}, value interface{}) WhereQuery
 	NotEqual(fieldPtr interface{}, value interface{}) WhereQuery
 	Less(fieldPtr interface{}, value interface{}) WhereQuery

@@ -2,6 +2,7 @@ package filters
 
 import (
 	"bytes"
+	"errors"
 	"github.com/coopernurse/gorp"
 	"reflect"
 )
@@ -97,6 +98,56 @@ func (filter *OrFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dial
 	return filter.joinFilters(" or ", structMap, dialect, startBindIdx)
 }
 
+// An InFilter is a filter for value IN (list_of_values).
+//
+// TODO: InFilter should also support sub-selects, but it currently
+// only supports lists of values.
+type InFilter struct {
+	expression interface{}
+	valueList  []interface{}
+}
+
+// TODO: Add interface for sub-selects.
+func (filter *InFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+	if len(filter.valueList) == 0 {
+		return "", nil, errors.New("Cannot create IN filter clause for empty list")
+	}
+	query := bytes.Buffer{}
+	args := make([]interface{}, 0, len(filter.valueList)+1)
+	var (
+		sqlValue string
+		err      error
+	)
+	if reflect.ValueOf(filter.expression).Kind() == reflect.Ptr {
+		sqlValue, err = structMap.LocateTableAndColumn(filter.expression)
+		if err != nil {
+			return "", nil, err
+		}
+	} else {
+		sqlValue = dialect.BindVar(startBindIdx)
+		args = append(args, filter.expression)
+	}
+	query.WriteString(sqlValue)
+	query.WriteString(" IN (")
+	for idx, target := range filter.valueList {
+		if idx > 0 {
+			query.WriteString(",")
+		}
+		if reflect.ValueOf(target).Kind() == reflect.Ptr {
+			sqlValue, err = structMap.LocateTableAndColumn(target)
+			if err != nil {
+				return "", nil, err
+			}
+		} else {
+			sqlValue = dialect.BindVar(startBindIdx + len(args))
+			args = append(args, target)
+		}
+		query.WriteString(sqlValue)
+	}
+	query.WriteString(")")
+	return query.String(), args, nil
+}
+
 // A JoinFilter is an AndFilter used for JOIN clauses and other forms
 // of multi-table filters.
 type JoinFilter struct {
@@ -127,9 +178,9 @@ type ComparisonFilter struct {
 	// Simply to make function definitions for helper functions
 	// shorter
 	structMap TableAndColumnLocater
-	dialect gorp.Dialect
-	sql bytes.Buffer
-	args []interface{}
+	dialect   gorp.Dialect
+	sql       bytes.Buffer
+	args      []interface{}
 }
 
 func (filter *ComparisonFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
@@ -141,7 +192,7 @@ func (filter *ComparisonFilter) Where(structMap TableAndColumnLocater, dialect g
 		return "", nil, err
 	}
 	filter.sql.WriteString(filter.comparison)
-	if err := filter.queryValue(filter.right, startBindIdx + len(filter.args)); err != nil {
+	if err := filter.queryValue(filter.right, startBindIdx+len(filter.args)); err != nil {
 		return "", nil, err
 	}
 	return filter.sql.String(), filter.args, nil
@@ -256,56 +307,64 @@ func False(fieldPtr interface{}) Filter {
 	return Not(True(fieldPtr))
 }
 
+// In returns a filter for fieldPtr IN (values)
+func In(fieldPtr interface{}, values ...interface{}) Filter {
+	return &InFilter{
+		expression: fieldPtr,
+		valueList:  values,
+	}
+}
+
 // Equal returns a filter for fieldPtr == value
 func Equal(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: "=",
-		right: value,
+		right:      value,
 	}
 }
 
 // NotEqual returns a filter for fieldPtr != value
 func NotEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: "<>",
-		right: value,
+		right:      value,
 	}
 }
 
 // Less returns a filter for fieldPtr < value
 func Less(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: "<",
-		right: value,
+		right:      value,
 	}
 }
 
 // LessOrEqual returns a filter for fieldPtr <= value
 func LessOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: "<=",
-		right: value,
+		right:      value,
 	}
 }
 
 // Greater returns a filter for fieldPtr > value
 func Greater(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: ">",
-		right: value,
+		right:      value,
 	}
 }
 
 // GreaterOrEqual returns a filter for fieldPtr >= value
 func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left: fieldPtr,
+		left:       fieldPtr,
 		comparison: ">=",
-		right: value,
+		right:      value,
 	}
 }
