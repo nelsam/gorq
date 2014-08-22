@@ -13,3 +13,4 @@ before_script:
   - mysql -u root -e "GRANT ALL ON gorptest.* TO gorptest@localhost IDENTIFIED BY 'gorptest'"
   - psql -c "CREATE USER gorptest PASSWORD 'gorptest';" -U postgres
   - psql -c "CREATE DATABASE gorptest OWNER gorptest;" -U postgres
+  - go get -u ./...
