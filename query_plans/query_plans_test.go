@@ -15,6 +15,10 @@ import (
 	_ "github.com/ziutek/mymysql/godrv"
 )
 
+type UnmappedStruct struct {
+	Id int
+}
+
 type EmptyStruct struct{}
 
 type InvalidStruct struct {
@@ -41,7 +45,9 @@ type Invoice struct {
 
 type OverriddenInvoice struct {
 	Invoice
-	Id string
+	Id           string
+	TransientId  string `db:"-"`
+	unexportedId string `db:"-"`
 }
 
 var testInvoices = []OverriddenInvoice{
@@ -225,6 +231,12 @@ func (suite *QueryPlanTestSuite) TestQueryPlan_NonStruct() {
 	}
 }
 
+func (suite *QueryPlanTestSuite) TestQueryPlan_UnmappedStruct() {
+	q := suite.getQueryPlanFor(UnmappedStruct{})
+	suite.NotEqual(0, len(q.Errors),
+		"Query(ref) should generate errors if ref has not yet been mapped")
+}
+
 type QueryLanguageTestSuite struct {
 	DbTestSuite
 	Ref *OverriddenInvoice
@@ -307,6 +319,20 @@ func (suite *QueryLanguageTestSuite) insertInvoices() {
 			suite.T().FailNow()
 		}
 	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_TransientField() {
+	q := Query(suite.Map, suite.Map, suite.Ref).
+		Assign(&suite.Ref.TransientId, "Test")
+	suite.NotEqual(0, len(q.(*AssignQueryPlan).Errors),
+		"Transient fields should generate errors when used as columns")
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_UnexportedField() {
+	q := Query(suite.Map, suite.Map, suite.Ref).
+		Assign(&suite.Ref.unexportedId, "Test")
+	suite.NotEqual(0, len(q.(*AssignQueryPlan).Errors),
+		"Unexported fields should generate errors when used as columns")
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
