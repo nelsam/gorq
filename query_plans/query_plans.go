@@ -180,6 +180,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
 	}
+	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for i := 0; i < value.NumField(); i++ {
 		fieldType := valueType.Field(i)
@@ -191,19 +192,20 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 			plan.mapColumns(table, fieldVal)
 		} else if fieldType.PkgPath == "" {
 			col := table.ColMap(fieldType.Name)
+			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
+			fieldMap := fieldColumnMap{
+				addr:         fieldVal.Addr().Interface(),
+				column:       col,
+				quotedTable:  quotedTableName,
+				quotedColumn: quotedCol,
+			}
+			plan.colMap = append(plan.colMap, fieldMap)
 			if !col.Transient {
-				quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-				fieldMap := fieldColumnMap{
-					addr:         fieldVal.Addr().Interface(),
-					column:       col,
-					quotedTable:  quotedTableName,
-					quotedColumn: quotedCol,
-				}
-				plan.colMap = append(plan.colMap, fieldMap)
+				queryableFields++
 			}
 		}
 	}
-	if len(plan.colMap) == 0 {
+	if queryableFields == 0 {
 		return errors.New("No fields in the target struct are mappable.")
 	}
 	return

@@ -21,8 +21,13 @@ type InvalidStruct struct {
 	notExportedValue string
 }
 
+type OnlyTransientFields struct {
+	ExportedTransientValue string `db:"-"`
+}
+
 type ValidStruct struct {
-	ExportedValue string
+	ExportedTransientValue string `db:"-"`
+	ExportedValue          string
 }
 
 type Invoice struct {
@@ -104,6 +109,9 @@ func (suite *DbTestSuite) SetupSuite() {
 	if err := suite.Map.CreateTablesIfNotExists(); !suite.NoError(err) {
 		suite.T().FailNow()
 	}
+
+	// These cause syntax errors during table creation
+	suite.Map.AddTable(OnlyTransientFields{})
 	suite.Map.AddTable(EmptyStruct{})
 }
 
@@ -201,6 +209,12 @@ func (suite *QueryPlanTestSuite) TestQueryPlan_InvalidStruct() {
 	q := suite.getQueryPlanFor(InvalidStruct{})
 	suite.NotEqual(0, len(q.Errors),
 		"Query(ref) should generate errors if ref has no exported fields")
+}
+
+func (suite *QueryPlanTestSuite) TestQueryPlan_OnlyTransient() {
+	q := suite.getQueryPlanFor(OnlyTransientFields{})
+	suite.NotEqual(0, len(q.Errors),
+		"Query(ref) should generate errors if ref has only transient fields")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_NonStruct() {
