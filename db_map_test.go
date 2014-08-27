@@ -1,10 +1,12 @@
 package gorp_queries
 
 import (
+	"database/sql"
 	"reflect"
 	"testing"
 
 	"github.com/coopernurse/gorp"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/nelsam/gorp_queries/interfaces"
 	"github.com/nelsam/gorp_queries/query_plans"
 	"github.com/stretchr/testify/suite"
@@ -18,6 +20,18 @@ type QueryTestSuite struct {
 	suite.Suite
 	Exec     SqlExecutor
 	TypeName string
+}
+
+func (suite *QueryTestSuite) SetupSuite() {
+	dbMap := new(DbMap)
+	dbMap.Dialect = gorp.SqliteDialect{}
+	connection, err := sql.Open("sqlite3", "/tmp/gorptest.bin")
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
+	dbMap.Db = connection
+	dbMap.AddTable(ValidStruct{})
+	suite.Exec = dbMap
 }
 
 func (suite *QueryTestSuite) getQueryFor(structType interface{}) *query_plans.QueryPlan {
@@ -60,19 +74,19 @@ func TestDbMapSuite(t *testing.T) {
 }
 
 func (suite *DbMapTestSuite) SetupSuite() {
+	suite.QueryTestSuite.SetupSuite()
 	suite.TypeName = "DbMap"
-	dbMap := new(DbMap)
-	dbMap.Dialect = gorp.SqliteDialect{}
-	dbMap.AddTable(ValidStruct{})
-	suite.Exec = dbMap
 }
 
-// TODO: Set up a proper DB connection, most likely with sqlite3, so
-// that we can test Begin().  Probably not a huge deal, though, since
-// we'd really just be checking the return type.
+func (suite *DbMapTestSuite) TestBegin() {
+	tx, err := suite.Exec.(*DbMap).Begin()
+	if suite.NoError(err) {
+		suite.IsType((*Transaction)(nil), tx)
+	}
+}
 
 type TransactionTestSuite struct {
-	DbMapTestSuite
+	QueryTestSuite
 }
 
 func TestTransactionSuite(t *testing.T) {
@@ -80,7 +94,7 @@ func TestTransactionSuite(t *testing.T) {
 }
 
 func (suite *TransactionTestSuite) SetupSuite() {
-	suite.DbMapTestSuite.SetupSuite()
+	suite.QueryTestSuite.SetupSuite()
 	suite.TypeName = "Transaction"
 	dbMap := suite.Exec.(*DbMap)
 	trans := new(Transaction)
