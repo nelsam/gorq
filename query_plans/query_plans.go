@@ -3,12 +3,13 @@ package query_plans
 import (
 	"bytes"
 	"errors"
+	"reflect"
+	"strings"
+
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorp_queries/dialects"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"
-	"reflect"
-	"strings"
 )
 
 type fieldColumnMap struct {
@@ -139,6 +140,9 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	}
 
 	targetVal := reflect.ValueOf(target)
+	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
+		plan.Errors = append(plan.Errors, errors.New("A query target must be a pointer to struct"))
+	}
 	targetTable, err := plan.mapTable(targetVal)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
@@ -187,15 +191,20 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 			plan.mapColumns(table, fieldVal)
 		} else if fieldType.PkgPath == "" {
 			col := table.ColMap(fieldType.Name)
-			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-			fieldMap := fieldColumnMap{
-				addr:         fieldVal.Addr().Interface(),
-				column:       col,
-				quotedTable:  quotedTableName,
-				quotedColumn: quotedCol,
+			if !col.Transient {
+				quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
+				fieldMap := fieldColumnMap{
+					addr:         fieldVal.Addr().Interface(),
+					column:       col,
+					quotedTable:  quotedTableName,
+					quotedColumn: quotedCol,
+				}
+				plan.colMap = append(plan.colMap, fieldMap)
 			}
-			plan.colMap = append(plan.colMap, fieldMap)
 		}
+	}
+	if len(plan.colMap) == 0 {
+		return errors.New("No fields in the target struct are mappable.")
 	}
 	return
 }
