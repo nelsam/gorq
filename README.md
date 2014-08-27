@@ -1,4 +1,4 @@
-[![GoDoc](https://godoc.org/github.com/nelsam/gorp_queries?status.png)](http://godoc.org/github.com/nelsam/gorp_queries)
+[![Build Status](https://travis-ci.org/nelsam/gorp_queries.svg?branch=master)](https://travis-ci.org/nelsam/gorp_queries) [![Coverage Status](https://img.shields.io/coveralls/nelsam/gorp_queries.svg)](https://coveralls.io/r/nelsam/gorp_queries?branch=master) [![GoDoc](https://godoc.org/github.com/nelsam/gorp_queries?status.png)](http://godoc.org/github.com/nelsam/gorp_queries)
 
 
 gorp_queries
