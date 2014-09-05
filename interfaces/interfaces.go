@@ -124,6 +124,7 @@ type UpdateQuery interface {
 	// Filter(filters.Equal(fieldPtr, value)).
 	In(fieldPtr interface{}, values ...interface{}) UpdateQuery
 	Like(fieldPtr interface{}, pattern string) UpdateQuery
+	ILike(fieldPtr interface{}, pattern string) UpdateQuery
 	Equal(fieldPtr interface{}, value interface{}) UpdateQuery
 	NotEqual(fieldPtr interface{}, value interface{}) UpdateQuery
 	Less(fieldPtr interface{}, value interface{}) UpdateQuery
@@ -163,6 +164,7 @@ type JoinQuery interface {
 	// On(filters.Equal(fieldPtr, value)).
 	In(fieldPtr interface{}, values ...interface{}) JoinQuery
 	Like(fieldPtr interface{}, pattern string) JoinQuery
+	ILike(fieldPtr interface{}, pattern string) JoinQuery
 	Equal(fieldPtr interface{}, value interface{}) JoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) JoinQuery
 	Less(fieldPtr interface{}, value interface{}) JoinQuery
@@ -199,6 +201,7 @@ type WhereQuery interface {
 	// Filter(filters.Equal(fieldPtr, value)).
 	In(fieldPtr interface{}, values ...interface{}) WhereQuery
 	Like(fieldPtr interface{}, pattern string) WhereQuery
+	ILike(fieldPtr interface{}, pattern string) WhereQuery
 	Equal(fieldPtr interface{}, value interface{}) WhereQuery
 	NotEqual(fieldPtr interface{}, value interface{}) WhereQuery
 	Less(fieldPtr interface{}, value interface{}) WhereQuery

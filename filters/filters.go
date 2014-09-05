@@ -325,6 +325,14 @@ func Like(fieldPtr interface{}, pattern string) Filter {
 	}
 }
 
+func ILike(fieldPtr interface{}, pattern string) Filter {
+	return &ComparisonFilter{
+		left:       fieldPtr,
+		comparison: " ilike ",
+		right:      pattern,
+	}
+}
+
 // Equal returns a filter for fieldPtr == value
 func Equal(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{

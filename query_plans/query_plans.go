@@ -292,6 +292,10 @@ func (plan *QueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.Whe
 	return plan.Filter(filters.Like(fieldPtr, pattern))
 }
 
+func (plan *QueryPlan) ILike(fieldPtr interface{}, pattern string) interfaces.WhereQuery {
+	return plan.Filter(filters.ILike(fieldPtr, pattern))
+}
+
 // Equal adds a column = value comparison to the where clause.
 func (plan *QueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.WhereQuery {
 	return plan.Filter(filters.Equal(fieldPtr, value))
@@ -688,6 +692,11 @@ func (plan *JoinQueryPlan) Like(fieldPtr interface{}, pattern string) interfaces
 	return plan
 }
 
+func (plan *JoinQueryPlan) ILike(fieldPtr interface{}, pattern string) interfaces.JoinQuery {
+	plan.QueryPlan.ILike(fieldPtr, pattern)
+	return plan
+}
+
 func (plan *JoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
@@ -779,6 +788,11 @@ func (plan *AssignQueryPlan) In(fieldPtr interface{}, values ...interface{}) int
 
 func (plan *AssignQueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.UpdateQuery {
 	plan.QueryPlan.Like(fieldPtr, pattern)
+	return plan
+}
+
+func (plan *AssignQueryPlan) ILike(fieldPtr interface{}, pattern string) interfaces.UpdateQuery {
+	plan.QueryPlan.ILike(fieldPtr, pattern)
 	return plan
 }
 
