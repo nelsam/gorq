@@ -3,12 +3,13 @@ package query_plans
 import (
 	"bytes"
 	"errors"
+	"reflect"
+	"strings"
+
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorp_queries/dialects"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"
-	"reflect"
-	"strings"
 )
 
 type fieldColumnMap struct {
@@ -284,6 +285,11 @@ func (plan *QueryPlan) Filter(filters ...filters.Filter) interfaces.WhereQuery {
 // In adds a column IN (values...) comparison to the where clause.
 func (plan *QueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.WhereQuery {
 	return plan.Filter(filters.In(fieldPtr, values...))
+}
+
+// Like adds a column LIKE pattern comparison to the where clause.
+func (plan *QueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.WhereQuery {
+	return plan.Filter(filters.Like(fieldPtr, pattern))
 }
 
 // Equal adds a column = value comparison to the where clause.
@@ -677,6 +683,11 @@ func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) inter
 	return plan
 }
 
+func (plan *JoinQueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.JoinQuery {
+	plan.QueryPlan.Like(fieldPtr, pattern)
+	return plan
+}
+
 func (plan *JoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.Equal(fieldPtr, value)
 	return plan
@@ -763,6 +774,11 @@ func (plan *AssignQueryPlan) Filter(filters ...filters.Filter) interfaces.Update
 
 func (plan *AssignQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *AssignQueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.UpdateQuery {
+	plan.QueryPlan.Like(fieldPtr, pattern)
 	return plan
 }
 
