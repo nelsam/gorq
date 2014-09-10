@@ -237,6 +237,13 @@ func (suite *QueryPlanTestSuite) TestQueryPlan_UnmappedStruct() {
 		"Query(ref) should generate errors if ref has not yet been mapped")
 }
 
+func (suite *QueryPlanTestSuite) TestQueryPlan_NonFieldPtr() {
+	q := suite.getQueryPlanFor(ValidStruct{})
+	q.Assign(new(int), 20)
+	suite.NotEqual(0, len(q.Errors),
+		"Assign(fieldPtr, value) should generate errors if fieldPtr is not a pointer to a field in ref")
+}
+
 type QueryLanguageTestSuite struct {
 	DbTestSuite
 	Ref *OverriddenInvoice
