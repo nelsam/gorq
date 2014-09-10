@@ -3,8 +3,9 @@ package filters
 import (
 	"bytes"
 	"errors"
-	"github.com/coopernurse/gorp"
 	"reflect"
+
+	"github.com/coopernurse/gorp"
 )
 
 type SqlWrapper interface {
@@ -312,6 +313,23 @@ func In(fieldPtr interface{}, values ...interface{}) Filter {
 	return &InFilter{
 		expression: fieldPtr,
 		valueList:  values,
+	}
+}
+
+// Like returns a filter for fieldPtr LIKE pattern
+func Like(fieldPtr interface{}, pattern string) Filter {
+	return &ComparisonFilter{
+		left:       fieldPtr,
+		comparison: " like ",
+		right:      pattern,
+	}
+}
+
+func ILike(fieldPtr interface{}, pattern string) Filter {
+	return &ComparisonFilter{
+		left:       fieldPtr,
+		comparison: " ilike ",
+		right:      pattern,
 	}
 }
 
