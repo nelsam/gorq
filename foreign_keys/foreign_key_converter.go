@@ -10,12 +10,11 @@ import (
 // foreign keys.
 type ForeignKeyConverter struct {
 	SubConverter gorp.TypeConverter
-	Parent       interface{}
 }
 
 // ToDb will attempt to typecast the passed in value to Keyer and
 // return the value's key.
-func (converter *ForeignKeyConverter) ToDb(value interface{}) (dbValue interface{}, err error) {
+func (converter ForeignKeyConverter) ToDb(parent, value interface{}) (dbValue interface{}, err error) {
 	if converter.SubConverter != nil {
 		defer func() {
 			if err == nil {
@@ -38,7 +37,7 @@ func (converter *ForeignKeyConverter) ToDb(value interface{}) (dbValue interface
 // FromDb takes a pointer to a field within a struct.  If the field's
 // Kind is reflect.Interface and its value is nil, FromDb will attempt
 // to initialize it using the registered foreign key relationships.
-func (converter *ForeignKeyConverter) FromDb(target interface{}) (scanner gorp.CustomScanner, convert bool) {
+func (converter ForeignKeyConverter) FromDb(parent, target interface{}) (scanner gorp.CustomScanner, convert bool) {
 	if converter.SubConverter != nil {
 		defer func() {
 			if convert == false {
@@ -49,7 +48,7 @@ func (converter *ForeignKeyConverter) FromDb(target interface{}) (scanner gorp.C
 
 	targetVal := reflect.ValueOf(target).Elem()
 	if targetVal.Kind() == reflect.Interface && targetVal.IsNil() {
-		if init, err := Lookup(converter.Parent, target); err == nil {
+		if init, err := Lookup(parent, target); err == nil {
 			targetVal.Set(reflect.ValueOf(init))
 			convert = true
 
@@ -57,11 +56,11 @@ func (converter *ForeignKeyConverter) FromDb(target interface{}) (scanner gorp.C
 			holderPtrVal := reflect.New(reflect.TypeOf(init.Key()))
 			scanner.Holder = holderPtrVal.Interface()
 			scanner.Binder = func(interface{}, interface{}) error {
-				holderVal := holderPtrVal.Elem()
-				if holderVal.IsNil() {
+				if holderPtrVal.IsNil() {
 					targetVal.Set(reflect.ValueOf(nil))
 					return nil
 				}
+				holderVal := holderPtrVal.Elem()
 				return init.SetKey(holderVal.Interface())
 			}
 		}
