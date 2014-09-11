@@ -3,7 +3,7 @@ package foreign_keys
 import (
 	"reflect"
 
-	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp"
 )
 
 // ForeignKeyConverter is a gorp.TypeConverter that converts

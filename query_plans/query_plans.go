@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp"
 	"github.com/nelsam/gorp_queries/dialects"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"

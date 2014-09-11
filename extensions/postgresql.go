@@ -3,7 +3,7 @@ package extensions
 import (
 	"bytes"
 
-	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp"
 	"github.com/nelsam/gorp_queries/filters"
 	"github.com/nelsam/gorp_queries/interfaces"
 	"github.com/nelsam/gorp_queries/query_plans"

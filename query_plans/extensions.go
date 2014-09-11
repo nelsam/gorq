@@ -1,7 +1,7 @@
 package query_plans
 
 import (
-	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorp"
 	"errors"
 )
 
