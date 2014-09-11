@@ -175,12 +175,22 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
 func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (err error) {
+	queryableFields, err := plan.mapColumnsCount(table, value)
+	if err != nil {
+		return err
+	}
+	if queryableFields == 0 {
+		return errors.New("No fields in the target struct are mappable.")
+	}
+	return nil
+}
+
+func (plan *QueryPlan) mapColumnsCount(table *gorp.TableMap, value reflect.Value) (queryableFields int, err error) {
 	value = value.Elem()
 	valueType := value.Type()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
 	}
-	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for i := 0; i < value.NumField(); i++ {
 		fieldType := valueType.Field(i)
@@ -189,7 +199,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 			if fieldVal.Kind() != reflect.Ptr {
 				fieldVal = fieldVal.Addr()
 			}
-			plan.mapColumns(table, fieldVal)
+			queryableFields, err = plan.mapColumnsCount(table, fieldVal)
 		} else if fieldType.PkgPath == "" {
 			col := table.ColMap(fieldType.Name)
 			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
@@ -204,9 +214,6 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 				queryableFields++
 			}
 		}
-	}
-	if queryableFields == 0 {
-		return errors.New("No fields in the target struct are mappable.")
 	}
 	return
 }

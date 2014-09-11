@@ -34,6 +34,11 @@ type ValidStruct struct {
 	ExportedValue          string
 }
 
+type ValidStructWithNoUniqueDbFields struct {
+	ValidStruct
+	AnotherTransientValue string `db:"-"`
+}
+
 type Invoice struct {
 	Id       int64
 	Created  int64
@@ -111,6 +116,7 @@ type DbTestSuite struct {
 func (suite *DbTestSuite) SetupSuite() {
 	suite.Map.AddTable(InvalidStruct{})
 	suite.Map.AddTable(ValidStruct{})
+	suite.Map.AddTable(ValidStructWithNoUniqueDbFields{})
 	suite.Map.AddTable(OverriddenInvoice{}).SetKeys(false, "Id")
 	if err := suite.Map.CreateTablesIfNotExists(); !suite.NoError(err) {
 		suite.T().FailNow()
@@ -242,6 +248,12 @@ func (suite *QueryPlanTestSuite) TestQueryPlan_NonFieldPtr() {
 	q.Assign(new(int), 20)
 	suite.NotEqual(0, len(q.Errors),
 		"Assign(fieldPtr, value) should generate errors if fieldPtr is not a pointer to a field in ref")
+}
+
+func (suite *QueryPlanTestSuite) TestQueryPlan_AllDbFieldsEmbedded() {
+	q := suite.getQueryPlanFor(ValidStructWithNoUniqueDbFields{})
+	suite.Equal(0, len(q.Errors),
+		"Query(ref) should not generate errors if ref only has db fields in an embedded struct")
 }
 
 type QueryLanguageTestSuite struct {

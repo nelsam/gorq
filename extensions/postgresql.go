@@ -1,11 +1,45 @@
 package extensions
 
 import (
+	"bytes"
+
 	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorp_queries/query_plans"
-	"github.com/nelsam/gorp_queries/interfaces"
 	"github.com/nelsam/gorp_queries/filters"
+	"github.com/nelsam/gorp_queries/interfaces"
+	"github.com/nelsam/gorp_queries/query_plans"
 )
+
+type pgJsonSelectWrapper struct {
+	actualValue interface{}
+	subElements []string
+}
+
+func (wrapper pgJsonSelectWrapper) ActualValue() interface{} {
+	return wrapper.actualValue
+}
+
+func (wrapper pgJsonSelectWrapper) WrapSql(sqlValue string) string {
+	buf := bytes.Buffer{}
+	buf.WriteString(sqlValue)
+	for idx, elem := range wrapper.subElements {
+		isLast := idx == len(wrapper.subElements)-1
+		buf.WriteString("::json->")
+		if isLast {
+			buf.WriteString(">")
+		}
+		buf.WriteString("'")
+		buf.WriteString(elem)
+		buf.WriteString("'")
+	}
+	return buf.String()
+}
+
+func PgJsonField(actualValue interface{}, subElements ...string) filters.SqlWrapper {
+	return pgJsonSelectWrapper{
+		actualValue: actualValue,
+		subElements: subElements,
+	}
+}
 
 type PostgresAssigner interface {
 	Assign(fieldPtr interface{}, value interface{}) PostgresAssignQuery

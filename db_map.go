@@ -6,6 +6,12 @@ import (
 	"github.com/nelsam/gorp_queries/query_plans"
 )
 
+type TargetedTypeConverter interface {
+	gorp.TypeConverter
+	Parent() interface{}
+	SetParent(interface{})
+}
+
 type SqlExecutor interface {
 	gorp.SqlExecutor
 	Query(interface{}) interfaces.Query
@@ -51,7 +57,8 @@ type DbMap struct {
 // See the interfaces package for details on what the query types are
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
-	gorpMap := &m.DbMap
+	clonedMap := m.cloneWithFkeyConverter(target)
+	gorpMap := &clonedMap.DbMap
 	return query_plans.Query(gorpMap, gorpMap, target)
 }
 
@@ -75,5 +82,7 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return query_plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
+	newTrans := t.cloneWithFkeyConverter(target)
+	gorpMap := &newTrans.dbmap.DbMap
+	return query_plans.Query(gorpMap, &newTrans.Transaction, target)
 }
