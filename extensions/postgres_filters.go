@@ -6,8 +6,8 @@ import (
 
 func ILike(fieldPtr interface{}, pattern string) Filter {
 	return &filters.ComparisonFilter{
-		left:       fieldPtr,
-		comparison: " ilike ",
-		right:      pattern,
+		Left:       fieldPtr,
+		Comparison: " ilike ",
+		Right:      pattern,
 	}
 }
