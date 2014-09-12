@@ -3,6 +3,7 @@ package query_plans
 import (
 	"database/sql"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/coopernurse/gorp"
@@ -328,6 +329,18 @@ func (suite *QueryLanguageTestSuite) insertInvoices() {
 	}
 }
 
+func (suite *QueryLanguageTestSuite) expectedLength(matcherFunc func(OverriddenInvoice) bool) (expected int) {
+	for _, inv := range testInvoices {
+		if matcherFunc(inv) {
+			expected++
+		}
+	}
+	if expected == 0 {
+		panic("Cannot continue tests with no matches for expected length")
+	}
+	return
+}
+
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_TransientField() {
 	q := Query(suite.Map, suite.Map, suite.Ref).
 		Assign(&suite.Ref.TransientId, "Test")
@@ -354,13 +367,14 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 			targetInv = inv
 		}
 	}
+
 	count, err := Query(suite.Map, suite.Map, suite.Ref).
 		Assign(&suite.Ref.IsPaid, true).
 		Where().
 		Equal(&suite.Ref.Id, targetInv.Id).
 		Update()
 	if suite.NoError(err) {
-		suite.Equal(count, 1)
+		suite.Equal(1, count)
 		isPaidCount += count
 	}
 
@@ -369,139 +383,242 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 		True(&suite.Ref.IsPaid).
 		Select()
 	if suite.NoError(err) {
-		suite.Equal(len(invTest), isPaidCount)
+		suite.Equal(isPaidCount, len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectSimple() {
 	invTest, err := Query(suite.Map, suite.Map, suite.Ref).Select()
 	if suite.NoError(err) {
-		suite.Equal(len(invTest), len(testInvoices))
+		suite.Equal(len(testInvoices), len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountSimple() {
 	count, err := Query(suite.Map, suite.Map, suite.Ref).Count()
 	if suite.NoError(err) {
-		suite.Equal(count, len(testInvoices))
+		suite.Equal(len(testInvoices), count)
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_OrderBy_ASC() {
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "asc").Select()
+	if suite.NoError(err) {
+		previous := invTest[0].(*OverriddenInvoice).Updated
+		for _, result := range invTest {
+			inv := result.(*OverriddenInvoice)
+			suite.True(previous <= inv.Updated, "OrderBy ASC means %d should be <= %d", previous, inv.Updated)
+			previous = inv.Updated
+		}
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_OrderBy_DESC() {
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "DESC").Select()
+	if suite.NoError(err) {
+		previous := invTest[0].(*OverriddenInvoice).Updated
+		for _, result := range invTest {
+			inv := result.(*OverriddenInvoice)
+			suite.True(previous >= inv.Updated, "OrderBy DESC means %d should be >= %d", previous, inv.Updated)
+			previous = inv.Updated
+		}
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLike() {
+	search := "another"
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return strings.Contains(inv.Memo, search)
+	})
+
+	matchSequence := "%"
+	if _, ok := suite.Map.Dialect.(gorp.MySQLDialect); ok {
+		// MySQL has non-standard everything
+		matchSequence = "\\%"
+	}
+	count, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		Like(&suite.Ref.Memo, matchSequence+search+matchSequence).
+		Count()
+	if suite.NoError(err) {
+		suite.Equal(expectedCount, count)
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectEqual() {
-	isPaidCount := 0
-	for _, inv := range testInvoices {
-		if inv.IsPaid {
-			isPaidCount++
-		}
-	}
-	if isPaidCount == 0 {
-		panic("Cannot continue test without at least one paid invoice.")
-	}
+	match := "test_memo"
+	expected := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Memo == match
+	})
+
 	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
-		True(&suite.Ref.IsPaid).
-		Limit(1).
+		Equal(&suite.Ref.Memo, match).
 		Select()
 	if suite.NoError(err) {
-		suite.Equal(len(invTest), 1)
+		suite.Equal(expected, len(invTest))
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectNotEqual() {
+	match := "test_memo"
+	expected := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Memo != match
+	})
+
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		NotEqual(&suite.Ref.Memo, match).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(expected, len(invTest))
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLess() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Updated < 2
+	})
+
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		Less(&suite.Ref.Updated, 2).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(expectedCount, len(invTest))
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLessOrEqual() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Updated <= 2
+	})
+
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		LessOrEqual(&suite.Ref.Updated, 2).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(expectedCount, len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Updated > 2
+	})
+
 	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
-		Greater(&suite.Ref.Updated, 1).
+		Greater(&suite.Ref.Updated, 2).
 		Select()
 	if suite.NoError(err) {
-		expectedCount := 0
-		for _, inv := range testInvoices {
-			if inv.Updated > 1 {
-				expectedCount++
-			}
-		}
-		suite.Equal(len(invTest), expectedCount)
+		suite.Equal(expectedCount, len(invTest))
 	}
+}
 
-	invTest, err = Query(suite.Map, suite.Map, suite.Ref).
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater_OffsetAndLimit() {
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Greater(&suite.Ref.Updated, 1).
 		Offset(1).
 		Limit(1).
 		Select()
 	if suite.NoError(err) {
-		suite.Equal(len(invTest), 1)
+		suite.Equal(1, len(invTest))
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreaterOrEqual() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Updated >= 2
+	})
+
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		GreaterOrEqual(&suite.Ref.Updated, 2).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(expectedCount, len(invTest))
+	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectTrue() {
+	suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.IsPaid
+	})
+
+	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+		Where().
+		True(&suite.Ref.IsPaid).
+		Limit(1).
+		Select()
+	if suite.NoError(err) {
+		suite.Equal(1, len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalse() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return !inv.IsPaid
+	})
+
 	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Select()
 	if suite.NoError(err) {
-		expectedCount := 0
-		for _, inv := range testInvoices {
-			if !inv.IsPaid {
-				expectedCount++
-			}
-		}
-		suite.Equal(len(invTest), expectedCount)
+		suite.Equal(expectedCount, len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalseAndEqual() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return !inv.IsPaid && inv.Created == 2
+	})
+
 	count, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Equal(&suite.Ref.Created, 2).
 		Count()
 	if suite.NoError(err) {
-		expectedCount := 0
-		for _, inv := range testInvoices {
-			if !inv.IsPaid && inv.Created == 2 {
-				expectedCount++
-			}
-		}
-		suite.Equal(count, expectedCount)
+		suite.Equal(expectedCount, count)
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectWithFilter() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return inv.Memo == "another_test_memo" || inv.Updated == 3
+	})
+
 	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Filter(filters.Or(filters.Equal(&suite.Ref.Memo, "another_test_memo"), filters.Equal(&suite.Ref.Updated, 3))).
 		Select()
 	if suite.NoError(err) {
-		expectedCount := 0
-		for _, inv := range testInvoices {
-			if inv.Memo == "another_test_memo" || inv.Updated == 3 {
-				expectedCount++
-			}
-		}
-		suite.Equal(len(invTest), expectedCount)
+		suite.Equal(expectedCount, len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
+	expectedCount := suite.expectedLength(func(inv OverriddenInvoice) bool {
+		return !inv.IsPaid
+	})
+
 	count, err := Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Delete()
 	if suite.NoError(err) {
-		expectedCount := 0
-		for _, inv := range testInvoices {
-			if !inv.IsPaid {
-				expectedCount++
-			}
-		}
-		suite.Equal(count, expectedCount)
+		suite.Equal(expectedCount, count)
 
 		count, err = Query(suite.Map, suite.Map, suite.Ref).
 			Where().
 			False(&suite.Ref.IsPaid).
 			Count()
 		if suite.NoError(err) {
-			suite.Equal(count, 0, "No unpaid invoices should exist after deleting all unpaid invoices")
+			suite.Equal(0, count, "No unpaid invoices should exist after deleting all unpaid invoices")
 		}
 	}
 }
