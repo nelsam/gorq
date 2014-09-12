@@ -172,9 +172,9 @@ func (filter *JoinFilter) JoinClause(structMap TableAndColumnLocater, dialect go
 
 // A ComparisonFilter is a filter that compares two values.
 type ComparisonFilter struct {
-	left       interface{}
-	comparison string
-	right      interface{}
+	Left       interface{}
+	Comparison string
+	Right      interface{}
 
 	// Simply to make function definitions for helper functions
 	// shorter
@@ -189,11 +189,11 @@ func (filter *ComparisonFilter) Where(structMap TableAndColumnLocater, dialect g
 	filter.dialect = dialect
 	filter.args = make([]interface{}, 0, 2)
 	filter.sql = bytes.Buffer{}
-	if err := filter.queryValue(filter.left, startBindIdx); err != nil {
+	if err := filter.queryValue(filter.Left, startBindIdx); err != nil {
 		return "", nil, err
 	}
-	filter.sql.WriteString(filter.comparison)
-	if err := filter.queryValue(filter.right, startBindIdx+len(filter.args)); err != nil {
+	filter.sql.WriteString(filter.Comparison)
+	if err := filter.queryValue(filter.Right, startBindIdx+len(filter.args)); err != nil {
 		return "", nil, err
 	}
 	return filter.sql.String(), filter.args, nil
@@ -319,70 +319,62 @@ func In(fieldPtr interface{}, values ...interface{}) Filter {
 // Like returns a filter for fieldPtr LIKE pattern
 func Like(fieldPtr interface{}, pattern string) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: " like ",
-		right:      pattern,
-	}
-}
-
-func ILike(fieldPtr interface{}, pattern string) Filter {
-	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: " ilike ",
-		right:      pattern,
+		Left:       fieldPtr,
+		Comparison: " like ",
+		Right:      pattern,
 	}
 }
 
 // Equal returns a filter for fieldPtr == value
 func Equal(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: "=",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: "=",
+		Right:      value,
 	}
 }
 
 // NotEqual returns a filter for fieldPtr != value
 func NotEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: "<>",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: "<>",
+		Right:      value,
 	}
 }
 
 // Less returns a filter for fieldPtr < value
 func Less(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: "<",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: "<",
+		Right:      value,
 	}
 }
 
 // LessOrEqual returns a filter for fieldPtr <= value
 func LessOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: "<=",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: "<=",
+		Right:      value,
 	}
 }
 
 // Greater returns a filter for fieldPtr > value
 func Greater(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: ">",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: ">",
+		Right:      value,
 	}
 }
 
 // GreaterOrEqual returns a filter for fieldPtr >= value
 func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	return &ComparisonFilter{
-		left:       fieldPtr,
-		comparison: ">=",
-		right:      value,
+		Left:       fieldPtr,
+		Comparison: ">=",
+		Right:      value,
 	}
 }
