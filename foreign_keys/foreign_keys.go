@@ -58,7 +58,7 @@ func Register(parent, fieldPtrOrName interface{}, fkey Keyer) (registerErr error
 func namesFor(parent, fieldPtrOrName interface{}) (parentPath, fieldName string, err error) {
 	parentVal := reflect.ValueOf(parent)
 	parentType := parentVal.Type()
-	for parentType.Kind() == reflect.Ptr {
+	if parentType.Kind() == reflect.Ptr {
 		parentType = parentType.Elem()
 		if parentVal.IsNil() {
 			parentVal.Set(reflect.New(parentType))
@@ -77,12 +77,14 @@ func namesFor(parent, fieldPtrOrName interface{}) (parentPath, fieldName string,
 		field := parentVal.Field(i)
 		fieldType := parentType.Field(i)
 		if fieldType.Anonymous {
-			if _, fieldName, err = namesFor(field.Interface(), fieldPtrOrName); err == nil {
+			if _, fieldName, err = namesFor(field.Addr().Interface(), fieldPtrOrName); err == nil {
 				return
 			}
-		} else if field.Addr().Interface() == fieldPtrOrName {
-			fieldName = fieldType.Name
-			return
+		} else {
+			if fieldType.PkgPath == "" && field.Addr().Interface() == fieldPtrOrName {
+				fieldName = fieldType.Name
+				return
+			}
 		}
 	}
 	return "", "", errors.New("The requested field pointer was not found on the parent value")
