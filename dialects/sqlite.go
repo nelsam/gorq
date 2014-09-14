@@ -2,7 +2,7 @@ package dialects
 
 import (
 	"fmt"
-	"github.com/nelsam/gorp"
+	"github.com/coopernurse/gorp"
 )
 
 type SqliteDialect struct {

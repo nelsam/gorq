@@ -5,7 +5,7 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/nelsam/gorp"
+	"github.com/coopernurse/gorp"
 )
 
 type SqlWrapper interface {

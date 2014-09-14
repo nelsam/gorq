@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nelsam/gorp"
+	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/nelsam/gorp_queries/interfaces"
 	"github.com/nelsam/gorp_queries/query_plans"
