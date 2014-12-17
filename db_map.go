@@ -2,13 +2,17 @@ package gorp_queries
 
 import (
 	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorp_queries/interfaces"
-	"github.com/nelsam/gorp_queries/query_plans"
+	"github.com/nelsam/gorq/interfaces"
 )
 
+// SqlExecutor is any type that can execute SQL statements.  Gorq's
+// SqlExecutor matches that of gorp, but has some additional methods.
 type SqlExecutor interface {
 	gorp.SqlExecutor
-	Query(interface{}) interfaces.Query
+
+	// Query should return a Query type that will perform queries
+	// against target.
+	Query(target interface{}) interfaces.Query
 }
 
 // DbMap embeds "github.com/coopernurse/gorp".DbMap and adds query
@@ -52,7 +56,7 @@ type DbMap struct {
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	return query_plans.Query(gorpMap, gorpMap, target)
+	return plans.Query(gorpMap, gorpMap, target)
 }
 
 // Begin acts just like "github.com/coopernurse/gorp".DbMap.Begin,
@@ -75,5 +79,5 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return query_plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
+	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
 }
