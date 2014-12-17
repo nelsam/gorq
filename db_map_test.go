@@ -1,4 +1,4 @@
-package gorp_queries
+package gorq
 
 import (
 	"database/sql"
@@ -7,8 +7,8 @@ import (
 
 	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nelsam/gorp_queries/interfaces"
-	"github.com/nelsam/gorp_queries/query_plans"
+	"github.com/nelsam/gorq/interfaces"
+	"github.com/nelsam/gorq/query_plans"
 	"github.com/stretchr/testify/suite"
 )
 

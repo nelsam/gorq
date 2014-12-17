@@ -1,7 +1,7 @@
-[![Build Status](https://drone.io/github.com/nelsam/gorp_queries/status.png)](https://drone.io/github.com/nelsam/gorp_queries/latest) [![Coverage Status](https://img.shields.io/coveralls/nelsam/gorp_queries.svg)](https://coveralls.io/r/nelsam/gorp_queries?branch=master) [![GoDoc](https://godoc.org/github.com/nelsam/gorp_queries?status.png)](http://godoc.org/github.com/nelsam/gorp_queries)
+[![Build Status](https://drone.io/github.com/nelsam/gorq/status.png)](https://drone.io/github.com/nelsam/gorq/latest) [![Coverage Status](https://img.shields.io/coveralls/nelsam/gorq.svg)](https://coveralls.io/r/nelsam/gorq?branch=master) [![GoDoc](https://godoc.org/github.com/nelsam/gorq?status.png)](http://godoc.org/github.com/nelsam/gorq)
 
 
-gorp_queries
+gorq
 ============
 
 ### WARNING:
@@ -21,7 +21,7 @@ just don't have as much time as I'd like.
 
 ## About
 
-gorp_queries extends [gorp](github.com/coopernurse/gorp) with a query
+gorq extends [gorp](github.com/coopernurse/gorp) with a query
 DSL intended to catch SQL mistakes at compile time instead of runtime.
 This is accomplished using reference structs and a relatively
 complicated interface structure.
@@ -44,18 +44,18 @@ to the programmer.
 Use go get and import the package:
 
 ```bash
-go get github.com/nelsam/gorp_queries
+go get github.com/nelsam/gorq
 ```
 
 ```go
-import "github.com/nelsam/gorp_queries"
+import "github.com/nelsam/gorq"
 ```
 
-Then, set up your DB map using `gorp_queries.DbMap` and use gorp as
+Then, set up your DB map using `gorq.DbMap` and use gorp as
 normal:
 
 ```go
-var dbMap = new(gorp_queries.DbMap)
+var dbMap = new(gorq.DbMap)
 dbMap.Db = dbConnection
 dbMap.Dialect = dbDialect
 
@@ -67,9 +67,9 @@ results, err := dbMap.Select(ref).
     Select()
 ```
 
-`gorp_queries.DbMap` includes all of the functionality of
+`gorq.DbMap` includes all of the functionality of
 `gorp.DbMap`, with a few extensions.  See
-[the documentation for gorp_queries](http://godoc.org/github.com/nelsam/gorp_queries)
+[the documentation for gorq](http://godoc.org/github.com/nelsam/gorq)
 for details on the extensions.  See
 [the documentation for gorp](http://godoc.org/github.com/coopernurse/gorp)
 for details on the functionality provided by gorp.

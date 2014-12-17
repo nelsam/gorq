@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorp_queries/dialects"
-	"github.com/nelsam/gorp_queries/filters"
-	"github.com/nelsam/gorp_queries/interfaces"
+	"github.com/nelsam/gorq/dialects"
+	"github.com/nelsam/gorq/filters"
+	"github.com/nelsam/gorq/interfaces"
 )
 
 type fieldColumnMap struct {

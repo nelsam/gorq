@@ -1,8 +1,8 @@
-package gorp_queries
+package gorq
 
 import (
 	"fmt"
-	"github.com/nelsam/gorp_queries/filters"
+	"github.com/nelsam/gorq/filters"
 )
 
 type functionWrapper struct {

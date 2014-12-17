@@ -1,4 +1,4 @@
-package gorp_queries
+package gorq
 
 import (
 	"github.com/coopernurse/gorp"
@@ -60,7 +60,7 @@ func (m *DbMap) Query(target interface{}) interfaces.Query {
 }
 
 // Begin acts just like "github.com/coopernurse/gorp".DbMap.Begin,
-// except that its return type is gorp_queries.Transaction.
+// except that its return type is gorq.Transaction.
 func (m *DbMap) Begin() (*Transaction, error) {
 	t, err := m.DbMap.Begin()
 	if err != nil {

@@ -1,4 +1,4 @@
-package gorp_queries
+package gorq
 
 import (
 	"fmt"
