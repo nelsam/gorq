@@ -1,4 +1,4 @@
-[![Build Status](https://drone.io/github.com/nelsam/gorq/status.png)](https://drone.io/github.com/nelsam/gorq/latest) [![Coverage Status](https://img.shields.io/coveralls/nelsam/gorq.svg)](https://coveralls.io/r/nelsam/gorq?branch=master) [![GoDoc](https://godoc.org/github.com/nelsam/gorq?status.png)](http://godoc.org/github.com/nelsam/gorq)
+[![Build Status](https://drone.io/github.com/nelsam/gorq/status.png)](https://drone.io/github.com/nelsam/gorq/latest) [![Coverage Status](https://coveralls.io/repos/nelsam/gorq/badge.svg)](https://coveralls.io/r/nelsam/gorq) [![GoDoc](https://godoc.org/github.com/nelsam/gorq?status.png)](http://godoc.org/github.com/nelsam/gorq)
 
 
 gorq
