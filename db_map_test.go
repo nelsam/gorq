@@ -8,7 +8,7 @@ import (
 	"github.com/coopernurse/gorp"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/nelsam/gorq/interfaces"
-	"github.com/nelsam/gorq/query_plans"
+	"github.com/nelsam/gorq/plans"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -34,7 +34,7 @@ func (suite *QueryTestSuite) SetupSuite() {
 	suite.Exec = dbMap
 }
 
-func (suite *QueryTestSuite) getQueryFor(structType interface{}) *query_plans.QueryPlan {
+func (suite *QueryTestSuite) getQueryFor(structType interface{}) *plans.QueryPlan {
 	var ptr, val interface{}
 	valueOfStruct := reflect.ValueOf(structType)
 	if valueOfStruct.Kind() == reflect.Ptr {
@@ -47,13 +47,13 @@ func (suite *QueryTestSuite) getQueryFor(structType interface{}) *query_plans.Qu
 
 	q := suite.Exec.Query(val)
 	suite.Implements((*interfaces.Query)(nil), q)
-	if plan, ok := q.(*query_plans.QueryPlan); suite.True(ok) {
+	if plan, ok := q.(*plans.QueryPlan); suite.True(ok) {
 		suite.NotEqual(0, len(plan.Errors),
 			"%s.Query(ref) should error if ref is not a pointer to a struct", suite.TypeName)
 	}
 
 	q = suite.Exec.Query(ptr)
-	if plan, ok := q.(*query_plans.QueryPlan); suite.True(ok) {
+	if plan, ok := q.(*plans.QueryPlan); suite.True(ok) {
 		return plan
 	}
 	return nil
