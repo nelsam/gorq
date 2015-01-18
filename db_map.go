@@ -3,6 +3,7 @@ package gorq
 import (
 	"github.com/coopernurse/gorp"
 	"github.com/nelsam/gorq/interfaces"
+	"github.com/nelsam/gorq/plans"
 )
 
 // SqlExecutor is any type that can execute SQL statements.  Gorq's

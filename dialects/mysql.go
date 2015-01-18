@@ -2,6 +2,7 @@ package dialects
 
 import (
 	"fmt"
+
 	"github.com/coopernurse/gorp"
 )
 

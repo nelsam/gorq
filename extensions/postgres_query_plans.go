@@ -2,9 +2,9 @@ package extensions
 
 import (
 	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorq/query_plans"
-	"github.com/nelsam/gorq/interfaces"
 	"github.com/nelsam/gorq/filters"
+	"github.com/nelsam/gorq/interfaces"
+	"github.com/nelsam/gorq/query_plans"
 )
 
 type PostgresAssigner interface {

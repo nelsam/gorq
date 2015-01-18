@@ -1,4 +1,4 @@
-package query_plans
+package plans
 
 import (
 	"database/sql"

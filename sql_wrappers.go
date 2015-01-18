@@ -2,11 +2,12 @@ package gorq
 
 import (
 	"fmt"
+
 	"github.com/nelsam/gorq/filters"
 )
 
 type functionWrapper struct {
-	actualValue interface{}
+	actualValue  interface{}
 	functionName string
 }
 
@@ -30,7 +31,7 @@ func (wrapper functionWrapper) WrapSql(sqlValue string) string {
 // where clause of the query.
 func Lower(value interface{}) filters.SqlWrapper {
 	return functionWrapper{
-		actualValue: value,
+		actualValue:  value,
 		functionName: "lower",
 	}
 }

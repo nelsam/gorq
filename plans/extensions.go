@@ -1,17 +1,18 @@
-package query_plans
+package plans
 
 import (
-	"github.com/coopernurse/gorp"
 	"errors"
+
+	"github.com/coopernurse/gorp"
 )
 
 type extensionMap struct {
-	dialect gorp.Dialect
+	dialect     gorp.Dialect
 	constructor func(*QueryPlan) interface{}
 }
 
 var (
-	extensions []extensionMap
+	extensions        []extensionMap
 	ExtensionNotFound = errors.New("No extension has been registered for the requested dialect")
 )
 
