@@ -1,9 +1,9 @@
 package gorq
 
 import (
-	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorq/interfaces"
-	"github.com/nelsam/gorq/plans"
+	"github.com/outdoorsy/gorp"
+	"github.com/outdoorsy/gorq/interfaces"
+	"github.com/outdoorsy/gorq/plans"
 )
 
 // SqlExecutor is any type that can execute SQL statements.  Gorq's
@@ -16,7 +16,7 @@ type SqlExecutor interface {
 	Query(target interface{}) interfaces.Query
 }
 
-// DbMap embeds "github.com/coopernurse/gorp".DbMap and adds query
+// DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
 // methods to it.
 type DbMap struct {
 	gorp.DbMap
@@ -60,7 +60,7 @@ func (m *DbMap) Query(target interface{}) interfaces.Query {
 	return plans.Query(gorpMap, gorpMap, target)
 }
 
-// Begin acts just like "github.com/coopernurse/gorp".DbMap.Begin,
+// Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
 // except that its return type is gorq.Transaction.
 func (m *DbMap) Begin() (*Transaction, error) {
 	t, err := m.DbMap.Begin()
@@ -70,7 +70,7 @@ func (m *DbMap) Begin() (*Transaction, error) {
 	return &Transaction{Transaction: *t, dbmap: m}, nil
 }
 
-// Transaction embeds "github.com/coopernurse/gorp".Transaction and
+// Transaction embeds "github.com/outdoorsy/gorp".Transaction and
 // adds query methods to it.
 type Transaction struct {
 	gorp.Transaction

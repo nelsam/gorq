@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/coopernurse/gorp"
-	"github.com/nelsam/gorq/dialects"
-	"github.com/nelsam/gorq/filters"
-	"github.com/nelsam/gorq/interfaces"
+	"github.com/outdoorsy/gorp"
+	"github.com/outdoorsy/gorq/dialects"
+	"github.com/outdoorsy/gorq/filters"
+	"github.com/outdoorsy/gorq/interfaces"
 )
 
 type fieldColumnMap struct {
@@ -174,7 +174,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (err error) {
+func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, parents ...string) (err error) {
 	value = value.Elem()
 	valueType := value.Type()
 	if plan.colMap == nil {
@@ -183,15 +183,33 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for i := 0; i < value.NumField(); i++ {
+		fieldParents := make([]string, 0, len(parents))
+		for _, parent := range parents {
+			fieldParents = append(fieldParents, parent)
+		}
 		fieldType := valueType.Field(i)
 		fieldVal := value.Field(i)
-		if fieldType.Anonymous {
+		embed := fieldType.Anonymous
+		tagValues := strings.Split(fieldType.Tag.Get("db"), ",")
+		if len(tagValues) > 1 {
+			options := tagValues[1:]
+			for _, option := range options {
+				if option == "embed" {
+					embed = true
+					fieldParents = append(fieldParents, fieldType.Name)
+					break
+				}
+			}
+		}
+		if embed {
 			if fieldVal.Kind() != reflect.Ptr {
 				fieldVal = fieldVal.Addr()
 			}
-			plan.mapColumns(table, fieldVal)
+			plan.mapColumns(table, fieldVal, fieldParents...)
 		} else if fieldType.PkgPath == "" {
-			col := table.ColMap(fieldType.Name)
+			names := append(fieldParents, fieldType.Name)
+			name := strings.Join(names, ".")
+			col := table.ColMap(name)
 			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
 			fieldMap := fieldColumnMap{
 				addr:         fieldVal.Addr().Interface(),

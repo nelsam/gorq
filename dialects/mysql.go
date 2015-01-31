@@ -3,7 +3,7 @@ package dialects
 import (
 	"fmt"
 
-	"github.com/coopernurse/gorp"
+	"github.com/outdoorsy/gorp"
 )
 
 type MySQLDialect struct {

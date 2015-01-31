@@ -1,7 +1,7 @@
 package interfaces
 
 import (
-	"github.com/nelsam/gorq/filters"
+	"github.com/outdoorsy/gorq/filters"
 )
 
 // A NonstandardLimiter is a type of query dialect that doesn't

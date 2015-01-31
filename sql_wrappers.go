@@ -3,7 +3,7 @@ package gorq
 import (
 	"fmt"
 
-	"github.com/nelsam/gorq/filters"
+	"github.com/outdoorsy/gorq/filters"
 )
 
 type functionWrapper struct {

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/coopernurse/gorp"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nelsam/gorq/filters"
-	"github.com/nelsam/gorq/interfaces"
+	"github.com/outdoorsy/gorp"
+	"github.com/outdoorsy/gorq/filters"
+	"github.com/outdoorsy/gorq/interfaces"
 	"github.com/stretchr/testify/suite"
 	_ "github.com/ziutek/mymysql/godrv"
 )
@@ -42,6 +42,11 @@ type Invoice struct {
 	Memo     string
 	PersonId int64
 	IsPaid   bool
+}
+
+type FakeEmbeddedInvoice struct {
+	Invoice        Invoice `db:",embed"`
+	SomeOtherField string
 }
 
 type OverriddenInvoice struct {
@@ -113,6 +118,7 @@ func (suite *DbTestSuite) SetupSuite() {
 	suite.Map.AddTable(InvalidStruct{})
 	suite.Map.AddTable(ValidStruct{})
 	suite.Map.AddTable(OverriddenInvoice{}).SetKeys(false, "Id")
+	suite.Map.AddTable(FakeEmbeddedInvoice{}).SetKeys(false, "Invoice.Id")
 	if err := suite.Map.CreateTablesIfNotExists(); !suite.NoError(err) {
 		suite.T().FailNow()
 	}
@@ -621,6 +627,26 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
 			suite.Equal(0, count, "No unpaid invoices should exist after deleting all unpaid invoices")
 		}
 	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_FakeEmbed() {
+	testMemo := "This is a test of a fake embedded field"
+	fakeEmbed := new(FakeEmbeddedInvoice)
+	fakeEmbed.SomeOtherField = "test"
+	fakeEmbed.Invoice.IsPaid = true
+	fakeEmbed.Invoice.Memo = testMemo
+	suite.Map.Insert(fakeEmbed)
+
+	results, err := Query(suite.Map, suite.Map, fakeEmbed).
+		Where().
+		Equal(&fakeEmbed.Invoice.Memo, testMemo).
+		Select()
+	suite.Require().NoError(err)
+	suite.Require().Equal(1, len(results))
+	fe := results[0].(*FakeEmbeddedInvoice)
+	suite.Equal("test", fe.SomeOtherField)
+	suite.Equal(testMemo, fe.Invoice.Memo)
+	suite.Equal(true, fe.Invoice.IsPaid)
 }
 
 // func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {

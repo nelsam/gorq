@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/coopernurse/gorp"
+	"github.com/outdoorsy/gorp"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nelsam/gorq/interfaces"
-	"github.com/nelsam/gorq/plans"
+	"github.com/outdoorsy/gorq/interfaces"
+	"github.com/outdoorsy/gorq/plans"
 	"github.com/stretchr/testify/suite"
 )
 

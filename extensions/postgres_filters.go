@@ -1,7 +1,7 @@
 package extensions
 
 import (
-	"github.com/nelsam/gorq/filters"
+	"github.com/outdoorsy/gorq/filters"
 )
 
 func ILike(fieldPtr interface{}, pattern string) filters.Filter {
