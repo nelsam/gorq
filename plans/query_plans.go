@@ -255,15 +255,23 @@ func (plan *QueryPlan) storeJoin() {
 	}
 }
 
-func (plan *QueryPlan) Join(target interface{}) interfaces.JoinQuery {
+func (plan *QueryPlan) JoinType(joinType string, target interface{}) interfaces.JoinQuery {
 	plan.storeJoin()
 	table, err := plan.mapTable(reflect.ValueOf(target))
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 	}
 	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-	plan.filters = &filters.JoinFilter{QuotedJoinTable: quotedTable}
+	plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: quotedTable}
 	return &JoinQueryPlan{QueryPlan: plan}
+}
+
+func (plan *QueryPlan) Join(target interface{}) interfaces.JoinQuery {
+	return plan.JoinType("inner", target)
+}
+
+func (plan *QueryPlan) LeftJoin(target interface{}) interfaces.JoinQuery {
+	return plan.JoinType("left outer", target)
 }
 
 func (plan *QueryPlan) On(filters ...filters.Filter) interfaces.JoinQuery {
