@@ -82,10 +82,14 @@ type Assigner interface {
 
 // A Joiner is a query that can add tables as join clauses.
 type Joiner interface {
-	// Join adds a table to the query.  The return type (JoinQuery)
-	// has methods for filtering how the new table relates to other
-	// tables in the query.
+	// Join adds a table to the query using INNER JOIN.  The
+	// return type (JoinQuery) has methods for filtering how
+	// the new table relates to other tables in the query.
 	Join(table interface{}) JoinQuery
+
+	// LeftJoin adds a table to the query using LEFT OUTER JOIN.
+	// Everything else is equivalent to Join.
+	LeftJoin(table interface{}) JoinQuery
 }
 
 // A Wherer is a query that can execute statements with a WHERE
