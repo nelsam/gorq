@@ -6,6 +6,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/coopernurse/gorp"
+	"github.com/nelsam/gorq/filters"
 )
 
 const (
@@ -19,7 +22,7 @@ type Geography struct {
 }
 
 // String returns a string representation of p.
-func (g *Geography) String() string {
+func (g Geography) String() string {
 	return fmt.Sprintf("GEOMETRY(POINT(%v,%v))::GEOGRAPHY", g.Lat, g.Lng)
 }
 
@@ -61,12 +64,37 @@ func (g *Geography) Scan(val interface{}) error {
 
 // Value implements "database/sql/driver".Valuer and will return the string
 // representation of p by calling the String() method.
-func (g *Geography) Value() (driver.Value, error) {
+func (g Geography) Value() (driver.Value, error) {
 	return g.String(), nil
 }
 
 // TypeDef implements "github.com/outdoorsy/gorp".TypeDeffer and will return
 // the type definition to be used when running a "CREATE TABLE" statement.
-func (g *Geography) TypeDef() string {
+func (g Geography) TypeDef() string {
 	return fmt.Sprintf("GEOGRAPHY(POINT, %d)", DefaultSRID)
+}
+
+type withinFilter struct {
+	field        interface{}
+	target       Geography
+	radiusMeters uint
+}
+
+func (f *withinFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+	col, err := structMap.LocateTableAndColumn(f.field)
+	if err != nil {
+		return "", nil, err
+	}
+	targetBind, radiusBind := dialect.BindVar(startBindIdx), dialect.BindVar(startBindIdx+1)
+	args := []interface{}{
+		f.target,
+		f.radiusMeters,
+	}
+	return fmt.Sprintf("ST_DWithin(%s, %s, %s)", col, targetBind, radiusBind), args, nil
+}
+
+// WithinMeters is a filter that checks if a Geography is within a certain
+// radius (in meters) of a a geography column.
+func WithinMeters(geoFieldPtr interface{}, target Geography, radiusMeters uint) filters.Filter {
+	return &withinFilter{field: geoFieldPtr, target: target, radiusMeters: radiusMeters}
 }
