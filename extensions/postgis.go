@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/outdoorsy/gorp"
-	"github.com/nelsam/gorq/filters"
+	"github.com/outdoorsy/gorq/filters"
 )
 
 const (
