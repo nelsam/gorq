@@ -579,7 +579,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 			return err
 		}
 		buffer.WriteString(orderStr)
-		plan.args = append(plan.args, args)
+		plan.args = append(plan.args, args...)
 	}
 	for index, groupBy := range plan.groupBy {
 		if index == 0 {
