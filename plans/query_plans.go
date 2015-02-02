@@ -100,8 +100,11 @@ func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int
 	columnsAndFields := make([]string, 0, len(allFields))
 	params := make([]interface{}, 0, len(allFields))
 	for _, field := range allFields {
-		column, err := colMap.LocateTableAndColumn(field)
-		if err == nil {
+		if reflect.TypeOf(field).Kind() == reflect.Ptr {
+			column, err := colMap.LocateTableAndColumn(field)
+			if err != nil {
+				return "", nil, err
+			}
 			columnsAndFields = append(columnsAndFields, column)
 			fieldFound = true
 		} else {
