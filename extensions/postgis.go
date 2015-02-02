@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/coopernurse/gorp"
+	"github.com/outdoorsy/gorp"
 	"github.com/nelsam/gorq/filters"
 )
 
