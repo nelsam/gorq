@@ -19,6 +19,19 @@ type SqlWrapper interface {
 	WrapSql(string) string
 }
 
+// TODO: Add support for this in filters.  Currently used only for
+// OrderBy.
+type MultiSqlWrapper interface {
+	// ActualValue should return the value to be used as a value or
+	// column in the SQL query.
+	ActualValues() []interface{}
+
+	// WrapSql should take the generated string that is being used to
+	// represent the ActualValue() in the query, and wrap it in
+	// whatever SQL this SqlWrapper needs to add to the query.
+	WrapSql(...string) string
+}
+
 // A TableAndColumnLocater takes a struct field reference and returns
 // the column for that field, complete with table name.
 type TableAndColumnLocater interface {

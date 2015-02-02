@@ -74,6 +74,65 @@ func (structMap structColumnMap) fieldMapForPointer(fieldPtr interface{}) (*fiel
 	return nil, fmt.Errorf("gorp: Cannot find a field matching the passed in pointer %d (value %v)", addr, value)
 }
 
+type order struct {
+	fieldOrWrapper interface{}
+	direction      string
+}
+
+func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int) (string, []interface{}, error) {
+	var (
+		wrapper      filters.SqlWrapper
+		allFields    []interface{}
+		multiWrapper filters.MultiSqlWrapper
+	)
+	switch t := o.fieldOrWrapper.(type) {
+	case filters.SqlWrapper:
+		wrapper = t
+		allFields = []interface{}{wrapper.ActualValue()}
+	case filters.MultiSqlWrapper:
+		multiWrapper = t
+		allFields = multiWrapper.ActualValues()
+	default:
+		allFields = []interface{}{o.fieldOrWrapper}
+	}
+	// OrderBy needs at least one reference to a column of some sort.
+	fieldFound := false
+	columnsAndFields := make([]string, 0, len(allFields))
+	params := make([]interface{}, 0, len(allFields))
+	for _, field := range allFields {
+		column, err := colMap.LocateTableAndColumn(field)
+		if err == nil {
+			columnsAndFields = append(columnsAndFields, column)
+			fieldFound = true
+		} else {
+			columnsAndFields = append(columnsAndFields, dialect.BindVar(bindIdx))
+			params = append(params, field)
+			bindIdx++
+		}
+	}
+	if !fieldFound {
+		return "", nil, errors.New("OrderBy requires a pointer to a struct field or " +
+			"a wrapper with at least one struct field pointer as an actual value.")
+	}
+	var orderStr string
+	if wrapper != nil {
+		orderStr = wrapper.WrapSql(columnsAndFields[0])
+	} else if multiWrapper != nil {
+		orderStr = multiWrapper.WrapSql(columnsAndFields...)
+	} else {
+		orderStr = columnsAndFields[0]
+	}
+	direction := strings.ToLower(o.direction)
+	switch direction {
+	case "asc", "desc":
+		orderStr += " " + direction
+	case "":
+	default:
+		return "", nil, errors.New(`gorp: Order by direction must be empty string, "asc", or "desc"`)
+	}
+	return orderStr, params, nil
+}
+
 // A QueryPlan is a Query.  It returns itself on most method calls;
 // the one exception is Assign(), which returns an AssignQueryPlan (a type of
 // QueryPlan that implements AssignQuery instead of Query).  The return
@@ -118,7 +177,7 @@ type QueryPlan struct {
 	assignCols     []string
 	assignBindVars []string
 	filters        filters.MultiFilter
-	orderBy        []string
+	orderBy        []order
 	groupBy        []string
 	limit          int64
 	offset         int64
@@ -386,22 +445,8 @@ func (plan *QueryPlan) False(fieldPtr interface{}) interfaces.WhereQuery {
 // OrderBy adds a column to the order by clause.  The direction is
 // optional - you may pass in an empty string to order in the default
 // direction for the given column.
-func (plan *QueryPlan) OrderBy(fieldPtr interface{}, direction string) interfaces.SelectQuery {
-	column, err := plan.colMap.LocateTableAndColumn(fieldPtr)
-	if err != nil {
-		plan.Errors = append(plan.Errors, err)
-		return plan
-	}
-	direction = strings.ToLower(direction)
-	switch direction {
-	case "asc", "desc":
-		column += " " + direction
-	case "":
-	default:
-		plan.Errors = append(plan.Errors, errors.New(`gorp: Order by direction must be empty string, "asc", or "desc"`))
-		return plan
-	}
-	plan.orderBy = append(plan.orderBy, column)
+func (plan *QueryPlan) OrderBy(fieldPtrOrWrapper interface{}, direction string) interfaces.SelectQuery {
+	plan.orderBy = append(plan.orderBy, order{fieldPtrOrWrapper, direction})
 	return plan
 }
 
@@ -544,7 +589,12 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 		} else {
 			buffer.WriteString(", ")
 		}
-		buffer.WriteString(orderBy)
+		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, len(plan.args))
+		if err != nil {
+			return err
+		}
+		buffer.WriteString(orderStr)
+		plan.args = append(plan.args, args)
 	}
 	for index, groupBy := range plan.groupBy {
 		if index == 0 {

@@ -98,3 +98,25 @@ func (f *withinFilter) Where(structMap filters.TableAndColumnLocater, dialect go
 func WithinMeters(geoFieldPtr interface{}, target Geography, radiusMeters uint) filters.Filter {
 	return &withinFilter{field: geoFieldPtr, target: target, radiusMeters: radiusMeters}
 }
+
+type distanceWrapper struct {
+	from interface{}
+	to   interface{}
+}
+
+func (wrapper distanceWrapper) ActualValues() []interface{} {
+	return []interface{}{wrapper.from, wrapper.to}
+}
+
+func (wrapper distanceWrapper) WrapSql(sqlValues ...string) string {
+	if len(sqlValues) != 2 {
+		panic("This should be impossible.  There are more sql values than actual values.")
+	}
+	return fmt.Sprintf("ST_Distance(%s, %s)", sqlValues[0], sqlValues[1])
+}
+
+// Distance wraps two Geometry arguments (or pointers to Geometry fields) in a
+// call to PostGIS to get the distance (in meters) between them.
+func Distance(from interface{}, to interface{}) filters.MultiSqlWrapper {
+	return distanceWrapper{from: from, to: to}
+}
