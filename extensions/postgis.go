@@ -23,7 +23,7 @@ type Geography struct {
 
 // String returns a string representation of p.
 func (g Geography) String() string {
-	return fmt.Sprintf("GEOMETRY(POINT(%v,%v))::GEOGRAPHY", g.Lat, g.Lng)
+	return fmt.Sprintf("GEOMETRY(POINT(%v,%v))::GEOGRAPHY", g.Lng, g.Lat)
 }
 
 // Scan implements "database/sql".Scanner and will scan the Postgis POINT(x y)
