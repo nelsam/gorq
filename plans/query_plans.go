@@ -338,15 +338,19 @@ func (plan *QueryPlan) storeJoin() {
 	}
 }
 
-func (plan *QueryPlan) JoinType(joinType string, target interface{}) interfaces.JoinQuery {
+func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan interfaces.JoinQuery) {
+	joinPlan = &JoinQueryPlan{QueryPlan: plan}
 	plan.storeJoin()
 	table, err := plan.mapTable(reflect.ValueOf(target))
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
+		// Add a filter just so the rest of the query methods won't panic
+		plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: "Error: no table found"}
+		return
 	}
 	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: quotedTable}
-	return &JoinQueryPlan{QueryPlan: plan}
+	return
 }
 
 func (plan *QueryPlan) Join(target interface{}) interfaces.JoinQuery {
