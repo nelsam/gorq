@@ -253,6 +253,9 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value) (er
 		if fieldType.Anonymous {
 			if fieldVal.Kind() != reflect.Ptr {
 				fieldVal = fieldVal.Addr()
+			} else if fieldVal.IsNil() {
+				// embedded types must be initialized for querying
+				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
 			}
 			plan.mapColumns(table, fieldVal)
 		} else if fieldType.PkgPath == "" {
