@@ -17,8 +17,8 @@ const (
 
 // Geography maps against Postgis geographical point.
 type Geography struct {
-	Lat float64 `json:"lat"`
 	Lng float64 `json:"lng"`
+	Lat float64 `json:"lat"`
 }
 
 // String returns a string representation of p.
