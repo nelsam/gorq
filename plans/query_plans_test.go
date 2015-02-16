@@ -10,6 +10,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/nelsam/gorq/dialects"
 	"github.com/nelsam/gorq/filters"
 	"github.com/nelsam/gorq/interfaces"
 	"github.com/stretchr/testify/suite"
@@ -307,13 +308,27 @@ func (suite *QueryLanguageTestSuite) SetupTest() {
 }
 
 func (suite *QueryLanguageTestSuite) TearDownTest() {
-	Query(suite.Map, suite.Map, suite.Ref).Delete()
+	var err error
+	switch suite.Map.Dialect.(type) {
+	case dialects.SqliteDialect:
+		// SQLite3 doesn't have a TRUNCATE TABLE command.
+		_, err = Query(suite.Map, suite.Map, suite.Ref).Delete()
+	default:
+		err = Query(suite.Map, suite.Map, suite.Ref).Truncate()
+	}
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
 }
 
 // insertInvoices() runs some insert queries to ensure that there is
 // data available for the other queries.  If any error occurs, it will
 // call suite.T().FailNow() to skip testing the rest of the suite.
 func (suite *QueryLanguageTestSuite) insertInvoices() {
+	if suite.T().Failed() {
+		// Leave the data for inspection
+		return
+	}
 	for _, inv := range testInvoices {
 		err := Query(suite.Map, suite.Map, suite.Ref).
 			Assign(&suite.Ref.Id, inv.Id).
@@ -621,6 +636,26 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
 			suite.Equal(0, count, "No unpaid invoices should exist after deleting all unpaid invoices")
 		}
 	}
+}
+
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
+	// SQLite3 doesn't support TRUNCATE TABLE
+	if _, ok := suite.Map.Dialect.(dialects.SqliteDialect); ok {
+		return
+	}
+	expectedCount := 0
+
+	err := Query(suite.Map, suite.Map, suite.Ref).
+		Truncate()
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
+	count, err := Query(suite.Map, suite.Map, suite.Ref).
+		Count()
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
+	suite.Equal(expectedCount, count)
 }
 
 // func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
