@@ -250,28 +250,44 @@ func (filter *NotFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dia
 
 // A NullFilter is a filter that compares a field to null
 type NullFilter struct {
-	addr interface{}
+	addrOrWrapper interface{}
 }
 
 func (filter *NullFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	column, err := structMap.LocateTableAndColumn(filter.addr)
+	addr := filter.addrOrWrapper
+	sqlWrapper, isSqlWrapper := addr.(SqlWrapper)
+	if isSqlWrapper {
+		addr = sqlWrapper.ActualValue()
+	}
+	sqlVal, err := structMap.LocateTableAndColumn(addr)
 	if err != nil {
 		return "", nil, err
 	}
-	return column + " is null", nil, nil
+	if isSqlWrapper {
+		sqlVal = sqlWrapper.WrapSql(sqlVal)
+	}
+	return sqlVal + " is null", nil, nil
 }
 
 // A NotNullFilter is a filter that compares a field to null
 type NotNullFilter struct {
-	addr interface{}
+	addrOrWrapper interface{}
 }
 
 func (filter *NotNullFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	column, err := structMap.LocateTableAndColumn(filter.addr)
+	addr := filter.addrOrWrapper
+	sqlWrapper, isSqlWrapper := addr.(SqlWrapper)
+	if isSqlWrapper {
+		addr = sqlWrapper.ActualValue()
+	}
+	sqlVal, err := structMap.LocateTableAndColumn(addr)
 	if err != nil {
 		return "", nil, err
 	}
-	return column + " is not null", nil, nil
+	if isSqlWrapper {
+		sqlVal = sqlWrapper.WrapSql(sqlVal)
+	}
+	return sqlVal + " is not null", nil, nil
 }
 
 // A TrueFilter simply filters on a boolean column's truthiness.
