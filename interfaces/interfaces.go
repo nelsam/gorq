@@ -11,6 +11,12 @@ type NonstandardLimiter interface {
 	Limit(interface{}) string
 }
 
+// A Truncater is a query that can execute TRUNCATE TABLE statements.
+type Truncater interface {
+	// Truncate will wipe all data within the requested table.
+	Truncate() error
+}
+
 // An Updater is a query that can execute UPDATE statements.
 type Updater interface {
 	// Update executes an update statement and returns the updated row
@@ -320,4 +326,9 @@ type Query interface {
 	SelectManipulator
 	Deleter
 	Selector
+
+	// Truncate can only be called immediately after generating the
+	// query plan.  If anything has been assigned or added to a where
+	// clause or join statement, it is no longer available.
+	Truncater
 }

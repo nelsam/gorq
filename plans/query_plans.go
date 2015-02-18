@@ -511,6 +511,13 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 	return buffer.String(), nil
 }
 
+// Truncate will run this query plan as a TRUNCATE TABLE statement.
+func (plan *QueryPlan) Truncate() error {
+	query := fmt.Sprintf("truncate table %s", plan.QuotedTable())
+	_, err := plan.dbMap.Exec(query)
+	return err
+}
+
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
 	query, err := plan.selectQuery()
