@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/coopernurse/gorp"
+	"github.com/go-gorp/gorp"
 	"github.com/nelsam/gorq/dialects"
 	"github.com/nelsam/gorq/filters"
 	"github.com/nelsam/gorq/interfaces"

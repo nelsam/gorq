@@ -1,7 +1,7 @@
 package extensions
 
 import (
-	"github.com/coopernurse/gorp"
+	"github.com/go-gorp/gorp"
 	"github.com/nelsam/gorq/filters"
 	"github.com/nelsam/gorq/interfaces"
 	"github.com/nelsam/gorq/plans"

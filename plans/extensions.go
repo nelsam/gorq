@@ -3,7 +3,7 @@ package plans
 import (
 	"errors"
 
-	"github.com/coopernurse/gorp"
+	"github.com/go-gorp/gorp"
 )
 
 type extensionMap struct {

@@ -21,7 +21,7 @@ just don't have as much time as I'd like.
 
 ## About
 
-gorq extends [gorp](github.com/coopernurse/gorp) with a query
+gorq extends [gorp](github.com/go-gorp/gorp) with a query
 DSL intended to catch SQL mistakes at compile time instead of runtime.
 This is accomplished using reference structs and a relatively
 complicated interface structure.
@@ -71,5 +71,5 @@ results, err := dbMap.Select(ref).
 `gorp.DbMap`, with a few extensions.  See
 [the documentation for gorq](http://godoc.org/github.com/nelsam/gorq)
 for details on the extensions.  See
-[the documentation for gorp](http://godoc.org/github.com/coopernurse/gorp)
+[the documentation for gorp](http://godoc.org/github.com/go-gorp/gorp)
 for details on the functionality provided by gorp.
