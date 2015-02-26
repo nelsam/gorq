@@ -21,7 +21,7 @@ just don't have as much time as I'd like.
 
 ## About
 
-gorq extends [gorp](github.com/go-gorp/gorp) with a query
+gorq extends [gorp](https://github.com/go-gorp/gorp) with a query
 DSL intended to catch SQL mistakes at compile time instead of runtime.
 This is accomplished using reference structs and a relatively
 complicated interface structure.
