@@ -511,6 +511,10 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 	return buffer.String(), nil
 }
 
+func (plan *QueryPlan) resetArgs() {
+	plan.args = nil
+}
+
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
 func (plan *QueryPlan) Truncate() error {
 	query := fmt.Sprintf("truncate table %s", plan.QuotedTable())
@@ -520,6 +524,7 @@ func (plan *QueryPlan) Truncate() error {
 
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
+	defer plan.resetArgs()
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
@@ -530,6 +535,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 // SelectToTarget will run this query plan as a SELECT statement, and
 // append results directly to the passed in slice pointer.
 func (plan *QueryPlan) SelectToTarget(target interface{}) error {
+	defer plan.resetArgs()
 	targetType := reflect.TypeOf(target)
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
@@ -543,6 +549,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 }
 
 func (plan *QueryPlan) Count() (int64, error) {
+	defer plan.resetArgs()
 	buffer := new(bytes.Buffer)
 	buffer.WriteString("select count(*)")
 	if err := plan.writeSelectSuffix(buffer); err != nil {
@@ -648,6 +655,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 
 // Insert will run this query plan as an INSERT statement.
 func (plan *QueryPlan) Insert() error {
+	defer plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
@@ -692,6 +700,7 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 
 // Update will run this query plan as an UPDATE statement.
 func (plan *QueryPlan) Update() (int64, error) {
+	defer plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
@@ -742,6 +751,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 
 // Delete will run this query plan as a DELETE statement.
 func (plan *QueryPlan) Delete() (int64, error) {
+	defer plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
