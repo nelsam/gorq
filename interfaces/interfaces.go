@@ -66,6 +66,10 @@ type SelectManipulator interface {
 	// reference struct and a direction, which can be "asc" or "desc".
 	OrderBy(fieldPtr interface{}, direction string) SelectQuery
 
+	// DiscardOrderBy discards any previous order by clause.  Useful
+	// if you want to take a select query and count the total results.
+	DiscardOrderBy() SelectQuery
+
 	// GroupBy groups the result list by a field of the reference
 	// struct.
 	GroupBy(fieldPtr interface{}) SelectQuery
@@ -73,8 +77,20 @@ type SelectManipulator interface {
 	// Limit limits the result list to a maximum length.
 	Limit(int64) SelectQuery
 
+	// DiscardLimit discards the limit clause of a query.  Useful if
+	// you need to take a query that is normally used for selecting a
+	// page of data and convert it to a count to get the total number
+	// of matching results.
+	DiscardLimit() SelectQuery
+
 	// Offset sets the starting point of the result list.
 	Offset(int64) SelectQuery
+
+	// DiscardOffset discards the offset clause of a query.  Useful if
+	// you need to take a query that is normally used for selecting a
+	// page of data and convert it to a count to get the total number
+	// of matching results.
+	DiscardOffset() SelectQuery
 }
 
 // An Assigner is a query that can set columns to values.

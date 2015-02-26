@@ -442,6 +442,12 @@ func (plan *QueryPlan) OrderBy(fieldPtrOrWrapper interface{}, direction string) 
 	return plan
 }
 
+// DiscardOrderBy discards all entries in the order by clause.
+func (plan *QueryPlan) DiscardOrderBy() interfaces.SelectQuery {
+	plan.orderBy = []order{}
+	return plan
+}
+
 // GroupBy adds a column to the group by clause.
 func (plan *QueryPlan) GroupBy(fieldPtr interface{}) interfaces.SelectQuery {
 	column, err := plan.colMap.LocateTableAndColumn(fieldPtr)
@@ -459,9 +465,21 @@ func (plan *QueryPlan) Limit(limit int64) interfaces.SelectQuery {
 	return plan
 }
 
+// DiscardLimit discards any previously set limit clause.
+func (plan *QueryPlan) DiscardLimit() interfaces.SelectQuery {
+	plan.limit = 0
+	return plan
+}
+
 // Offset sets the offset clause of the query.
 func (plan *QueryPlan) Offset(offset int64) interfaces.SelectQuery {
 	plan.offset = offset
+	return plan
+}
+
+// DiscardOffset discards any previously set offset clause.
+func (plan *QueryPlan) DiscardOffset() interfaces.SelectQuery {
+	plan.offset = 0
 	return plan
 }
 
