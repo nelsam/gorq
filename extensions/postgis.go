@@ -134,6 +134,25 @@ func WithinMeters(geoFieldPtr interface{}, target Geography, radiusMeters uint) 
 	return &withinFilter{field: geoFieldPtr, target: target, radiusMeters: radiusMeters}
 }
 
+type containsFilter struct {
+	polygon Polygon
+	target  Geography
+}
+
+func (f *containsFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+	polyBind, targetBind := dialect.BindVar(startBindIdx), dialect.BindVar(startBindIdx+1)
+	args := []interface{}{
+		f.polygon,
+		f.target,
+	}
+	return fmt.Sprintf("ST_Contains(%s, %s)", polyBind, targetBind), args, nil
+}
+
+// Contains is a filter that checks if a Geography is contained within the given polygon.
+func Contains(polygon Polygon, target Geography) filters.Filter {
+	return &containsFilter{polygon: polygon, target: target}
+}
+
 type distanceWrapper struct {
 	from interface{}
 	to   interface{}
