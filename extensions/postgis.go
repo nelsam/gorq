@@ -81,13 +81,13 @@ type Polygon struct {
 
 // String returns a string representation of p.
 func (p Polygon) String() string {
-	b := bytes.NewBufferString("POLYGON(")
+	b := bytes.NewBufferString("POLYGON((")
 	for _, v := range p.Points {
 		b.WriteString(fmt.Sprintf("%v %v, ", v.Lng, v.Lat))
 	}
 	// Close the loop
 	b.WriteString(fmt.Sprintf("%v %v", p.Points[0].Lng, p.Points[0].Lat))
-	b.WriteString(")")
+	b.WriteString("))")
 	return b.String()
 }
 
