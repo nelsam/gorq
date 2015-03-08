@@ -3,8 +3,8 @@ env:
   - GOPATH=/usr/local/drone
   - PATH=$PATH:$GOROOT/bin:$GOPATH/bin
 script:
-  - mysql -u root -e "create database gorptest"
-  - mysql -u root -e "grant all on gorptest.* to gorptest@localhost identified by 'gorptest'"
+  - mysql -u root -h 127.0.0.1 -e "create database gorptest"
+  - mysql -u root -h 127.0.0.1 -e "grant all on gorptest.* to gorptest@localhost identified by 'gorptest'"
   - psql -U postgres -c "create user gorptest password 'gorptest'"
   - psql -U postgres -c "create database gorptest owner gorptest"
   -
