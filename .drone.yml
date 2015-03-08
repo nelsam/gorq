@@ -1,0 +1,27 @@
+image: go1.3
+env:
+  - GOPATH=/usr/local/drone
+  - PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+script:
+  - mysql -u root -e "create database gorptest"
+  - mysql -u root -e "grant all on gorptest.* to gorptest@localhost identified by 'gorptest'"
+  - psql -U postgres -c "create user gorptest password 'gorptest'"
+  - psql -U postgres -c "create database gorptest owner gorptest"
+  -
+  - go build ./...
+  - for Package in $(go list ./...)
+  - do
+  -     go test -v -race -covermode=count -coverprofile=profile.out "$Package"
+  -     if [[ -f profile.out ]]
+  -     then
+  -         if [[ "$(cat profile.out)" != "mode: count" ]]
+  -         then
+  -             grep -v "mode: count" profile.out >> coverage.out
+  -         fi
+  -     fi
+  - done
+  - go get -v github.com/mattn/goveralls
+  - goveralls -coverprofile=coverage.out -service=drone.io -repotoken $COVERALLS_TOKEN
+services:
+  - postgres:9.3
+  - mysql
