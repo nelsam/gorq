@@ -166,15 +166,18 @@ func (f *containsFilter) Where(structMap filters.TableAndColumnLocater, dialect 
 		}
 		targetSQL = col
 	}
-	return fmt.Sprintf("ST_Contains(%s::geometry, %s::geometry)", containerSQL, targetSQL), args, nil
+	return fmt.Sprintf("ST_Contains(%s::geography::geometry, %s::geography::geometry)", containerSQL, targetSQL), args, nil
 }
 
-// Contains is a filter that checks if a GIS value is contained within
-// a GIS polygon value.  container will be used as a GIS literal type
-// if it is of type Polygon, and target will be used as a GIS literal
-// type if it is of type Polygon or Geography.  Otherwise, they will
-// be used as if they are pointers to fields in a reference table,
-// which map to SQL columns of GIS types.
+// Contains is a filter that checks if a GIS geography value is
+// contained within a GIS polygon geography value.  container will be
+// used as a GIS literal if it is of type Polygon, and target will be
+// used as a GIS literal if it is of type Polygon or Geography.
+// Otherwise, they will be used as if they are pointers to fields in a
+// reference table, which map to SQL columns of GIS types.
+//
+// Values will be first cast to geography (to ensure their SRID is set
+// properly), then cast to geometry for the comparison.
 func Contains(container, target interface{}) filters.Filter {
 	return &containsFilter{container: container, target: target}
 }
