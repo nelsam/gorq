@@ -1,6 +1,6 @@
 image: go1.3
 env:
-  - GOPATH=/usr/local/drone
+  - GOPATH=/var/cache/drone
   - PATH=$PATH:$GOROOT/bin:$GOPATH/bin
 script:
   - mysql -u root -h 127.0.0.1 -e "create database gorptest"
@@ -8,6 +8,7 @@ script:
   - psql -U postgres -h 127.0.0.1 -c "create user gorptest password 'gorptest'"
   - psql -U postgres -h 127.0.0.1 -c "create database gorptest owner gorptest"
   -
+  - go get -t ./...
   - go build ./...
   - for Package in $(go list ./...)
   - do
