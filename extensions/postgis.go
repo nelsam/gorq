@@ -81,15 +81,14 @@ type Polygon struct {
 
 // String returns a string representation of p.
 func (p Polygon) String() string {
-	str := "POLYGON("
-	for i, v := range p.Points {
-		str += fmt.Sprintf("%v %v", v.Lng, v.Lat)
-		if i != len(p.Points)-1 {
-			str += ","
-		}
+	b := bytes.NewBufferString("POLYGON(")
+	for _, v := range p.Points {
+		b.WriteString(fmt.Sprintf("%v %v, ", v.Lng, v.Lat))
 	}
-	str += ")"
-	return str
+	// Close the loop
+	b.WriteString(fmt.Sprintf("%v %v", p.Points[0].Lng, p.Points[0].Lat))
+	b.WriteString(")")
+	return b.String()
 }
 
 // Value implements "database/sql/driver".Valuer and will return the string
@@ -135,22 +134,49 @@ func WithinMeters(geoFieldPtr interface{}, target Geography, radiusMeters uint) 
 }
 
 type containsFilter struct {
-	polygon Polygon
-	target  Geography
+	container interface{}
+	target    interface{}
 }
 
 func (f *containsFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	polyBind, targetBind := dialect.BindVar(startBindIdx), dialect.BindVar(startBindIdx+1)
-	args := []interface{}{
-		f.polygon,
-		f.target,
+	args := make([]interface{}, 0, 2)
+	var containerSQL, targetSQL string
+	if _, ok := f.container.(Polygon); ok {
+		args = append(args, f.container)
+		containerSQL = dialect.BindVar(startBindIdx)
+		startBindIdx++
+	} else {
+		col, err := structMap.LocateTableAndColumn(f.container)
+		if err != nil {
+			return "", nil, err
+		}
+		containerSQL = col
 	}
-	return fmt.Sprintf("ST_Contains(%s, %s)", polyBind, targetBind), args, nil
+
+	_, targetIsPoly := f.target.(Polygon)
+	_, targetIsGeo := f.target.(Geography)
+	if targetIsPoly || targetIsGeo {
+		args = append(args, f.target)
+		targetSQL = dialect.BindVar(startBindIdx)
+		startBindIdx++
+	} else {
+		col, err := structMap.LocateTableAndColumn(f.target)
+		if err != nil {
+			return "", nil, err
+		}
+		targetSQL = col
+	}
+	return fmt.Sprintf("ST_Contains(%s::geometry, %s::geometry)", containerSQL, targetSQL), args, nil
 }
 
-// Contains is a filter that checks if a Geography is contained within the given polygon.
-func Contains(polygon Polygon, target Geography) filters.Filter {
-	return &containsFilter{polygon: polygon, target: target}
+// Contains is a filter that checks if a GIS value is contained within
+// a GIS polygon value.  container will be used as a GIS literal type
+// if it is of type Polygon, and target will be used as a GIS literal
+// type if it is of type Polygon or Geography.  Otherwise, they will
+// be used as if they are pointers to fields in a reference table,
+// which map to SQL columns of GIS types.
+func Contains(container, target interface{}) filters.Filter {
+	return &containsFilter{container: container, target: target}
 }
 
 type distanceWrapper struct {
