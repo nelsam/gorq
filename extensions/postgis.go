@@ -74,6 +74,41 @@ func (g Geography) TypeDef() string {
 	return fmt.Sprintf("GEOGRAPHY(POINT, %d)", DefaultSRID)
 }
 
+// Polygon maps against Postgis geographical point.
+type Polygon struct {
+	Points []Geography `json:"points"`
+}
+
+// String returns a string representation of p.
+func (p Polygon) String() string {
+	str := "POLYGON("
+	for i, v := range p.Points {
+		str += fmt.Sprintf("%v %v", v.Lng, v.Lat)
+		if i != len(p.Points)-1 {
+			str += ","
+		}
+	}
+	str += ")"
+	return str
+}
+
+// Value implements "database/sql/driver".Valuer and will return the string
+// representation of p by calling the String() method.
+func (p Polygon) Value() (driver.Value, error) {
+	return p.String(), nil
+}
+
+// TypeDef implements "github.com/outdoorsy/gorp".TypeDeffer and will return
+// the type definition to be used when running a "CREATE TABLE" statement.
+func (p Polygon) TypeDef() string {
+	return fmt.Sprintf("GEOGRAPHY(POLYGON, %d)", DefaultSRID)
+}
+
+// Valid returns whether this Polygon is valid and usable.
+func (p *Polygon) Valid() bool {
+	return len(p.Points) >= 3
+}
+
 type withinFilter struct {
 	field        interface{}
 	target       Geography
