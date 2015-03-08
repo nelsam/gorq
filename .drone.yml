@@ -5,8 +5,8 @@ env:
 script:
   - mysql -u root -h 127.0.0.1 -e "create database gorptest"
   - mysql -u root -h 127.0.0.1 -e "grant all on gorptest.* to gorptest@localhost identified by 'gorptest'"
-  - psql "user=$POSTGRES_USER password=$POSTGRES_PASSWORD host=127.0.0.1" -c "create user gorptest password 'gorptest'"
-  - psql "user=$POSTGRES_USER password=$POSTGRES_PASSWORD host=127.0.0.1" -c "create database gorptest owner gorptest"
+  - psql "user=$POSTGRES_USER password=$POSTGRES_PASSWORD host=localhost" -c "create user gorptest password 'gorptest'"
+  - psql "user=$POSTGRES_USER password=$POSTGRES_PASSWORD host=localhost" -c "create database gorptest owner gorptest"
   -
   - go build ./...
   - for Package in $(go list ./...)
