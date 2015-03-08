@@ -23,5 +23,5 @@ script:
   - go get -v github.com/mattn/goveralls
   - goveralls -coverprofile=coverage.out -service=drone.io -repotoken $COVERALLS_TOKEN
 services:
-  - postgres:9.3
+  - library/postgres:9.3
   - mysql
