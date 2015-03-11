@@ -252,72 +252,37 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 // difficult to do accidentally.
 func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, prefix string, parents ...string) (err error) {
 	value = value.Elem()
-	valueType := value.Type()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
 	}
 	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-	for i := 0; i < value.NumField(); i++ {
-		fieldParents := make([]string, 0, len(parents))
-		for _, parent := range parents {
-			fieldParents = append(fieldParents, parent)
-		}
-		fieldType := valueType.Field(i)
-		fieldVal := value.Field(i)
-		embed := fieldType.Anonymous
-		tagValues := strings.Split(fieldType.Tag.Get("db"), ",")
-		if len(tagValues) > 1 {
-			options := tagValues[1:]
-			for _, option := range options {
-				if option == "embed" {
-					embed = true
-					fieldParents = append(fieldParents, fieldType.Name)
+	for _, col := range table.Columns {
+		field := value.FieldByIndex(col.FieldIndex())
+		alias := prefix + col.ColumnName
+		fieldRef := field.Addr().Interface()
+		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
+		if col.References() != nil || len(col.ReferencedBy()) > 0 {
+			// Check for already-mapped columns that reference or
+			// are referenced by this column.
+			for _, prevColMap := range plan.colMap {
+				if plan.hasReference(prevColMap.column, col) {
+					alias = "-"
+					plan.lastRefs = append(plan.lastRefs, filters.Equal(fieldRef, prevColMap.addr))
 					break
 				}
 			}
 		}
-		if embed {
-			fieldPtr := fieldVal.Addr().Interface()
-			if fieldVal.Kind() != reflect.Ptr {
-				fieldVal = fieldVal.Addr()
-			} else if fieldVal.IsNil() {
-				// embedded types must be initialized for querying
-				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
-			}
-			if m, err := plan.colMap.fieldMapForPointer(fieldPtr); err == nil {
-				prefix += m.column.JoinAlias()
-			}
-			plan.mapColumns(table, fieldVal, prefix, fieldParents...)
-		} else if fieldType.PkgPath == "" {
-			names := append(fieldParents, fieldType.Name)
-			name := strings.Join(names, ".")
-			col := table.ColMap(name)
-			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-			alias := prefix + col.ColumnName
-			fieldRef := fieldVal.Addr().Interface()
-			if col.References() != nil || len(col.ReferencedBy()) > 0 {
-				// Check for already-mapped columns that reference or
-				// are referenced by this column.
-				for _, prevColMap := range plan.colMap {
-					if plan.hasReference(prevColMap.column, col) {
-						alias = "-"
-						plan.lastRefs = append(plan.lastRefs, filters.Equal(fieldRef, prevColMap.addr))
-						break
-					}
-				}
-			}
-			fieldMap := fieldColumnMap{
-				addr:         fieldRef,
-				column:       col,
-				alias:        alias,
-				quotedTable:  quotedTableName,
-				quotedColumn: quotedCol,
-			}
-			plan.colMap = append(plan.colMap, fieldMap)
-			if !col.Transient {
-				queryableFields++
-			}
+		fieldMap := fieldColumnMap{
+			addr:         fieldRef,
+			column:       col,
+			alias:        alias,
+			quotedTable:  quotedTableName,
+			quotedColumn: quotedCol,
+		}
+		plan.colMap = append(plan.colMap, fieldMap)
+		if !col.Transient {
+			queryableFields++
 		}
 	}
 	if queryableFields == 0 {
