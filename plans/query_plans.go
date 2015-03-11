@@ -174,7 +174,6 @@ type QueryPlan struct {
 	Errors []error
 
 	table          *gorp.TableMap
-	columns        []*gorp.ColumnMap
 	dbMap          *gorp.DbMap
 	quotedTable    string
 	executor       gorp.SqlExecutor
@@ -292,10 +291,23 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 			name := strings.Join(names, ".")
 			col := table.ColMap(name)
 			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
+			alias := prefix + col.ColumnName
+			if col.References() != nil || len(col.ReferencedBy()) > 0 {
+				// Check for already-mapped columns that relate to
+				// this column.  We don't need more than one column
+				// containing the same data to be used in the select
+				// statement.
+				for _, prevColMap := range plan.colMap {
+					if hasReference(prevColMap.column, col) {
+						alias = "-"
+						break
+					}
+				}
+			}
 			fieldMap := fieldColumnMap{
 				addr:         fieldVal.Addr().Interface(),
 				column:       col,
-				alias:        prefix + col.ColumnName,
+				alias:        alias,
 				quotedTable:  quotedTableName,
 				quotedColumn: quotedCol,
 			}
@@ -309,6 +321,24 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		return errors.New("No fields in the target struct are mappable.")
 	}
 	return
+}
+
+func hasReference(a, b *gorp.ColumnMap) bool {
+	if len(a.ReferencedBy()) > 0 && b.References() != nil {
+		for _, ref := range a.ReferencedBy() {
+			if ref.Column() == b {
+				return true
+			}
+		}
+	}
+	if a.References() != nil && len(b.ReferencedBy()) > 0 {
+		for _, ref := range b.ReferencedBy() {
+			if ref.Column() == a {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Extend returns an extended query, using extensions for the
@@ -615,7 +645,7 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 	buffer.WriteString("select ")
 	for index, m := range plan.colMap {
 		col := m.column
-		if !col.Transient {
+		if !col.Transient && m.alias != "-" {
 			if index != 0 {
 				buffer.WriteString(",")
 			}
