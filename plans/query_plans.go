@@ -278,6 +278,10 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for _, col := range table.Columns {
+		if value.Type().FieldByIndex(col.FieldIndex()).PkgPath != "" {
+			// Don't map unexported fields
+			continue
+		}
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
 		fieldRef := field.Addr().Interface()
