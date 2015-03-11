@@ -180,6 +180,7 @@ type QueryPlan struct {
 	target         reflect.Value
 	colMap         structColumnMap
 	joins          []*filters.JoinFilter
+	lastRefs       []filters.Filter
 	assignCols     []string
 	assignBindVars []string
 	filters        filters.MultiFilter
@@ -235,6 +236,8 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
 		prefix = m.column.JoinAlias()
 	}
+
+	plan.lastRefs = make([]filters.Filter, 0, 2)
 
 	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
 		return nil, err
@@ -292,20 +295,20 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 			col := table.ColMap(name)
 			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
 			alias := prefix + col.ColumnName
+			fieldRef := fieldVal.Addr().Interface()
 			if col.References() != nil || len(col.ReferencedBy()) > 0 {
-				// Check for already-mapped columns that relate to
-				// this column.  We don't need more than one column
-				// containing the same data to be used in the select
-				// statement.
+				// Check for already-mapped columns that reference or
+				// are referenced by this column.
 				for _, prevColMap := range plan.colMap {
-					if hasReference(prevColMap.column, col) {
+					if plan.hasReference(prevColMap.column, col) {
 						alias = "-"
+						plan.lastRefs = append(plan.lastRefs, filters.Equal(fieldRef, prevColMap.addr))
 						break
 					}
 				}
 			}
 			fieldMap := fieldColumnMap{
-				addr:         fieldVal.Addr().Interface(),
+				addr:         fieldRef,
 				column:       col,
 				alias:        alias,
 				quotedTable:  quotedTableName,
@@ -323,7 +326,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 	return
 }
 
-func hasReference(a, b *gorp.ColumnMap) bool {
+func (plan *QueryPlan) hasReference(a, b *gorp.ColumnMap) bool {
 	if len(a.ReferencedBy()) > 0 && b.References() != nil {
 		for _, ref := range a.ReferencedBy() {
 			if ref.Column() == b {
@@ -861,6 +864,11 @@ func (plan *QueryPlan) Delete() (int64, error) {
 // changed so that it will match the JoinQuery interface.
 type JoinQueryPlan struct {
 	*QueryPlan
+}
+
+func (plan *JoinQueryPlan) References() interfaces.JoinQuery {
+	plan.QueryPlan.Filter(plan.lastRefs...)
+	return plan
 }
 
 func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.JoinQuery {
