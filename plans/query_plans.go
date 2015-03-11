@@ -22,6 +22,9 @@ type fieldColumnMap struct {
 	// points to.
 	column *gorp.ColumnMap
 
+	// alias is used in the query as an alias for this column.
+	alias string
+
 	// quotedTable should be the pre-quoted table string for this
 	// column.
 	quotedTable string
@@ -171,6 +174,7 @@ type QueryPlan struct {
 	Errors []error
 
 	table          *gorp.TableMap
+	columns        []*gorp.ColumnMap
 	dbMap          *gorp.DbMap
 	quotedTable    string
 	executor       gorp.SqlExecutor
@@ -228,7 +232,12 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 		return nil, err
 	}
 
-	if err = plan.mapColumns(targetTable, targetVal); err != nil {
+	prefix := ""
+	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
+		prefix = m.column.JoinAlias()
+	}
+
+	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
 		return nil, err
 	}
 	return targetTable, nil
@@ -239,7 +248,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, parents ...string) (err error) {
+func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, prefix string, parents ...string) (err error) {
 	value = value.Elem()
 	valueType := value.Type()
 	if plan.colMap == nil {
@@ -267,13 +276,17 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, par
 			}
 		}
 		if embed {
+			fieldPtr := fieldVal.Addr().Interface()
 			if fieldVal.Kind() != reflect.Ptr {
 				fieldVal = fieldVal.Addr()
 			} else if fieldVal.IsNil() {
 				// embedded types must be initialized for querying
 				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
 			}
-			plan.mapColumns(table, fieldVal, fieldParents...)
+			if m, err := plan.colMap.fieldMapForPointer(fieldPtr); err == nil {
+				prefix += m.column.JoinAlias()
+			}
+			plan.mapColumns(table, fieldVal, prefix, fieldParents...)
 		} else if fieldType.PkgPath == "" {
 			names := append(fieldParents, fieldType.Name)
 			name := strings.Join(names, ".")
@@ -282,6 +295,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, par
 			fieldMap := fieldColumnMap{
 				addr:         fieldVal.Addr().Interface(),
 				column:       col,
+				alias:        prefix + col.ColumnName,
 				quotedTable:  quotedTableName,
 				quotedColumn: quotedCol,
 			}
@@ -599,7 +613,8 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 		return plan.Errors[0]
 	}
 	buffer.WriteString("select ")
-	for index, col := range plan.table.Columns {
+	for index, m := range plan.colMap {
+		col := m.column
 		if !col.Transient {
 			if index != 0 {
 				buffer.WriteString(",")
@@ -607,6 +622,10 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 			buffer.WriteString(plan.QuotedTable())
 			buffer.WriteString(".")
 			buffer.WriteString(plan.dbMap.Dialect.QuoteField(col.ColumnName))
+			if m.alias != "" {
+				buffer.WriteString(" AS ")
+				buffer.WriteString(m.alias)
+			}
 		}
 	}
 	return nil
