@@ -245,6 +245,26 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	return targetTable, nil
 }
 
+// fieldByIndex is a copy of v.FieldByIndex, except that it will
+// initialize nil pointers while descending the indexes.
+func fieldByIndex(v reflect.Value, index []int) reflect.Value {
+	for _, idx := range index {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		switch v.Kind() {
+		case reflect.Struct:
+			v = v.Field(idx)
+		default:
+			panic("gorp: found unsupported type using fieldByIndex")
+		}
+	}
+	return v
+}
+
 // mapColumns creates a list of field addresses and column maps, to
 // make looking up the column for a field address easier.  Note that
 // it doesn't do any special handling for overridden fields, because
@@ -258,7 +278,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for _, col := range table.Columns {
-		field := value.FieldByIndex(col.FieldIndex())
+		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
