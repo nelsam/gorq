@@ -223,18 +223,42 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 }
 
 func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error) {
-	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
-		return nil, errors.New("gorp: Cannot create query plan - target value must be a pointer to a struct")
-	}
-
-	targetTable, err := plan.dbMap.TableFor(targetVal.Type().Elem(), false)
-	if err != nil {
-		return nil, err
+	if targetVal.Kind() != reflect.Ptr {
+		plan.Errors = append(plan.Errors, errors.New("All joins must be to pointer types"))
 	}
 
 	prefix := ""
 	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
 		prefix = m.column.JoinAlias()
+	}
+
+	// targetVal could feasibly be a slice or array, to store
+	// *-to-many results in.
+	elemType := targetVal.Type().Elem()
+	if elemType.Kind() == reflect.Slice || elemType.Kind() == reflect.Array {
+		if targetVal.IsNil() {
+			targetVal.Set(reflect.MakeSlice(elemType.Elem(), 0, 1))
+		}
+		if targetVal.Len() == 0 {
+			newElem := reflect.New(elemType.Elem()).Elem()
+			if newElem.Kind() == reflect.Ptr {
+				newElem.Set(reflect.New(newElem.Type().Elem()))
+			}
+			targetVal.Set(reflect.Append(targetVal, newElem))
+		}
+		targetVal = targetVal.Index(0)
+		if targetVal.Kind() != reflect.Ptr {
+			targetVal = targetVal.Addr()
+		}
+	}
+
+	if targetVal.Elem().Kind() != reflect.Struct {
+		return nil, errors.New("gorp: Cannot create query plan - no struct found to map to")
+	}
+
+	targetTable, err := plan.dbMap.TableFor(targetVal.Type().Elem(), false)
+	if err != nil {
+		return nil, err
 	}
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
