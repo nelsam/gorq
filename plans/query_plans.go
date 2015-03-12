@@ -224,7 +224,7 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 
 func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error) {
 	if targetVal.Kind() != reflect.Ptr {
-		plan.Errors = append(plan.Errors, errors.New("All joins must be to pointer types"))
+		return nil, errors.New("All query targets must be pointer types")
 	}
 
 	prefix := ""
