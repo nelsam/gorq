@@ -228,8 +228,13 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	}
 
 	prefix := ""
+	if plan.table != nil {
+		prefix = "-"
+	}
 	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
-		prefix = m.column.JoinAlias()
+		if m.column.TargetTable() != nil {
+			prefix = m.column.JoinAlias()
+		}
 	}
 
 	// targetVal could feasibly be a slice or array, to store
@@ -308,9 +313,12 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		}
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
+		if prefix == "-" {
+			alias = "-"
+		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-		if col.References() != nil || len(col.ReferencedBy()) > 0 {
+		if alias != "-" && (col.References() != nil || len(col.ReferencedBy()) > 0) {
 			// Check for already-mapped columns that reference or
 			// are referenced by this column.
 			for _, prevColMap := range plan.colMap {
