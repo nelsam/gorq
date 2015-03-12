@@ -243,7 +243,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	if elemType.Kind() == reflect.Slice || elemType.Kind() == reflect.Array {
 		targetVal = targetVal.Elem()
 		if targetVal.IsNil() {
-			targetVal.Set(reflect.MakeSlice(elemType.Elem(), 0, 1))
+			targetVal.Set(reflect.MakeSlice(elemType, 0, 1))
 		}
 		if targetVal.Len() == 0 {
 			newElem := reflect.New(elemType.Elem()).Elem()
