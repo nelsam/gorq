@@ -184,6 +184,13 @@ type JoinQuery interface {
 	// it is used in the join clause.
 	On(...filters.Filter) JoinQuery
 
+	// References has a special meaning - it will add all discovered
+	// foreign key equalities to the join clause automatically.  Any
+	// columns already added to the plan that reference or are
+	// referenced by the columns in the joined table will be added
+	// using filters.Equal.
+	References() JoinQuery
+
 	// These methods are sugar for filtering a join, the same as the
 	// methods on WhereQuery.  Equal(fieldPtr, value) is sugar for
 	// On(filters.Equal(fieldPtr, value)).

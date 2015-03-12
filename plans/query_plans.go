@@ -22,6 +22,9 @@ type fieldColumnMap struct {
 	// points to.
 	column *gorp.ColumnMap
 
+	// alias is used in the query as an alias for this column.
+	alias string
+
 	// quotedTable should be the pre-quoted table string for this
 	// column.
 	quotedTable string
@@ -177,6 +180,7 @@ type QueryPlan struct {
 	target         reflect.Value
 	colMap         structColumnMap
 	joins          []*filters.JoinFilter
+	lastRefs       []filters.Filter
 	assignCols     []string
 	assignBindVars []string
 	filters        filters.MultiFilter
@@ -219,8 +223,42 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 }
 
 func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error) {
-	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
-		return nil, errors.New("gorp: Cannot create query plan - target value must be a pointer to a struct")
+	if targetVal.Kind() != reflect.Ptr {
+		return nil, errors.New("All query targets must be pointer types")
+	}
+
+	prefix := ""
+	if plan.table != nil {
+		prefix = "-"
+	}
+	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
+		if m.column.TargetTable() != nil {
+			prefix = m.column.JoinAlias()
+		}
+	}
+
+	// targetVal could feasibly be a slice or array, to store
+	// *-to-many results in.
+	elemType := targetVal.Type().Elem()
+	if elemType.Kind() == reflect.Slice || elemType.Kind() == reflect.Array {
+		if targetVal.IsNil() {
+			targetVal.Set(reflect.MakeSlice(elemType.Elem(), 0, 1))
+		}
+		if targetVal.Len() == 0 {
+			newElem := reflect.New(elemType.Elem()).Elem()
+			if newElem.Kind() == reflect.Ptr {
+				newElem.Set(reflect.New(newElem.Type().Elem()))
+			}
+			targetVal.Set(reflect.Append(targetVal, newElem))
+		}
+		targetVal = targetVal.Index(0)
+		if targetVal.Kind() != reflect.Ptr {
+			targetVal = targetVal.Addr()
+		}
+	}
+
+	if targetVal.Elem().Kind() != reflect.Struct {
+		return nil, errors.New("gorp: Cannot create query plan - no struct found to map to")
 	}
 
 	targetTable, err := plan.dbMap.TableFor(targetVal.Type().Elem(), false)
@@ -228,10 +266,32 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 		return nil, err
 	}
 
-	if err = plan.mapColumns(targetTable, targetVal); err != nil {
+	plan.lastRefs = make([]filters.Filter, 0, 2)
+
+	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
 		return nil, err
 	}
 	return targetTable, nil
+}
+
+// fieldByIndex is a copy of v.FieldByIndex, except that it will
+// initialize nil pointers while descending the indexes.
+func fieldByIndex(v reflect.Value, index []int) reflect.Value {
+	for _, idx := range index {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		switch v.Kind() {
+		case reflect.Struct:
+			v = v.Field(idx)
+		default:
+			panic("gorp: found unsupported type using fieldByIndex")
+		}
+	}
+	return v
 }
 
 // mapColumns creates a list of field addresses and column maps, to
@@ -239,62 +299,70 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, parents ...string) (err error) {
+func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, prefix string, parents ...string) (err error) {
 	value = value.Elem()
-	valueType := value.Type()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
 	}
 	queryableFields := 0
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-	for i := 0; i < value.NumField(); i++ {
-		fieldParents := make([]string, 0, len(parents))
-		for _, parent := range parents {
-			fieldParents = append(fieldParents, parent)
+	for _, col := range table.Columns {
+		if value.Type().FieldByIndex(col.FieldIndex()).PkgPath != "" {
+			// Don't map unexported fields
+			continue
 		}
-		fieldType := valueType.Field(i)
-		fieldVal := value.Field(i)
-		embed := fieldType.Anonymous
-		tagValues := strings.Split(fieldType.Tag.Get("db"), ",")
-		if len(tagValues) > 1 {
-			options := tagValues[1:]
-			for _, option := range options {
-				if option == "embed" {
-					embed = true
-					fieldParents = append(fieldParents, fieldType.Name)
+		field := fieldByIndex(value, col.FieldIndex())
+		alias := prefix + col.ColumnName
+		if prefix == "-" {
+			alias = "-"
+		}
+		fieldRef := field.Addr().Interface()
+		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
+		if alias != "-" && (col.References() != nil || len(col.ReferencedBy()) > 0) {
+			// Check for already-mapped columns that reference or
+			// are referenced by this column.
+			for _, prevColMap := range plan.colMap {
+				if plan.hasReference(prevColMap.column, col) {
+					alias = "-"
+					plan.lastRefs = append(plan.lastRefs, filters.Equal(fieldRef, prevColMap.addr))
 					break
 				}
 			}
 		}
-		if embed {
-			if fieldVal.Kind() != reflect.Ptr {
-				fieldVal = fieldVal.Addr()
-			} else if fieldVal.IsNil() {
-				// embedded types must be initialized for querying
-				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
-			}
-			plan.mapColumns(table, fieldVal, fieldParents...)
-		} else if fieldType.PkgPath == "" {
-			names := append(fieldParents, fieldType.Name)
-			name := strings.Join(names, ".")
-			col := table.ColMap(name)
-			quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-			fieldMap := fieldColumnMap{
-				addr:         fieldVal.Addr().Interface(),
-				column:       col,
-				quotedTable:  quotedTableName,
-				quotedColumn: quotedCol,
-			}
-			plan.colMap = append(plan.colMap, fieldMap)
-			if !col.Transient {
-				queryableFields++
-			}
+		fieldMap := fieldColumnMap{
+			addr:         fieldRef,
+			column:       col,
+			alias:        alias,
+			quotedTable:  quotedTableName,
+			quotedColumn: quotedCol,
+		}
+		plan.colMap = append(plan.colMap, fieldMap)
+		if !col.Transient {
+			queryableFields++
 		}
 	}
 	if queryableFields == 0 {
 		return errors.New("No fields in the target struct are mappable.")
 	}
 	return
+}
+
+func (plan *QueryPlan) hasReference(a, b *gorp.ColumnMap) bool {
+	if len(a.ReferencedBy()) > 0 && b.References() != nil {
+		for _, ref := range a.ReferencedBy() {
+			if ref.Column() == b {
+				return true
+			}
+		}
+	}
+	if a.References() != nil && len(b.ReferencedBy()) > 0 {
+		for _, ref := range b.ReferencedBy() {
+			if ref.Column() == a {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Extend returns an extended query, using extensions for the
@@ -599,14 +667,19 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 		return plan.Errors[0]
 	}
 	buffer.WriteString("select ")
-	for index, col := range plan.table.Columns {
-		if !col.Transient {
+	for index, m := range plan.colMap {
+		col := m.column
+		if !col.Transient && m.alias != "-" {
 			if index != 0 {
 				buffer.WriteString(",")
 			}
 			buffer.WriteString(plan.QuotedTable())
 			buffer.WriteString(".")
 			buffer.WriteString(plan.dbMap.Dialect.QuoteField(col.ColumnName))
+			if m.alias != "" {
+				buffer.WriteString(" AS ")
+				buffer.WriteString(m.alias)
+			}
 		}
 	}
 	return nil
@@ -812,6 +885,11 @@ func (plan *QueryPlan) Delete() (int64, error) {
 // changed so that it will match the JoinQuery interface.
 type JoinQueryPlan struct {
 	*QueryPlan
+}
+
+func (plan *JoinQueryPlan) References() interfaces.JoinQuery {
+	plan.QueryPlan.Filter(plan.lastRefs...)
+	return plan
 }
 
 func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.JoinQuery {
