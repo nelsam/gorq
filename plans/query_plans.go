@@ -241,6 +241,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	// *-to-many results in.
 	elemType := targetVal.Type().Elem()
 	if elemType.Kind() == reflect.Slice || elemType.Kind() == reflect.Array {
+		targetVal = targetVal.Elem()
 		if targetVal.IsNil() {
 			targetVal.Set(reflect.MakeSlice(elemType.Elem(), 0, 1))
 		}
