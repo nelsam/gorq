@@ -61,20 +61,28 @@ func (structMap structColumnMap) LocateTableAndColumn(fieldPtr interface{}) (str
 	return fieldMap.quotedTable + "." + fieldMap.quotedColumn, nil
 }
 
-// fieldMapForPointer takes a pointer to a struct field and returns
-// the fieldColumnMap for that struct field.
-func (structMap structColumnMap) fieldMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
+func (structMap structColumnMap) joinMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
 	for _, fieldMap := range structMap {
 		if fieldMap.addr == fieldPtr {
-			if fieldMap.column.Transient {
-				return nil, errors.New("gorp: Cannot run queries against transient columns")
-			}
 			return &fieldMap, nil
 		}
 	}
 	fieldPtrVal := reflect.ValueOf(fieldPtr)
 	addr, value := fieldPtrVal.Pointer(), fieldPtrVal.Elem().Interface()
 	return nil, fmt.Errorf("gorp: Cannot find a field matching the passed in pointer %d (value %v)", addr, value)
+}
+
+// fieldMapForPointer takes a pointer to a struct field and returns
+// the fieldColumnMap for that struct field.
+func (structMap structColumnMap) fieldMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
+	m, err := structMap.joinMapForPointer(fieldPtr)
+	if err != nil {
+		return nil, err
+	}
+	if m.column.Transient {
+		return nil, errors.New("gorp: Cannot run queries against transient columns")
+	}
+	return m, nil
 }
 
 type order struct {
@@ -231,9 +239,11 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	if plan.table != nil {
 		prefix = "-"
 	}
-	if m, err := plan.colMap.fieldMapForPointer(targetVal.Interface()); err == nil {
+	var targetTable *gorp.TableMap
+	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
 		if m.column.TargetTable() != nil {
 			prefix = m.column.JoinAlias()
+			targetTable = m.column.TargetTable()
 		}
 	}
 
@@ -257,14 +267,24 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 			targetVal = targetVal.Addr()
 		}
 	}
+	// It could also be a pointer to a pointer to a struct, if the
+	// struct field is a pointer, itself.  This is *only* allowed when
+	// the passed in value mapped to a field, though, so targetTable
+	// must already be set.
+	if targetTable != nil && elemType.Kind() == reflect.Ptr {
+		targetVal = targetVal.Elem()
+	}
 
 	if targetVal.Elem().Kind() != reflect.Struct {
 		return nil, errors.New("gorp: Cannot create query plan - no struct found to map to")
 	}
 
-	targetTable, err := plan.dbMap.TableFor(targetVal.Type().Elem(), false)
-	if err != nil {
-		return nil, err
+	var err error
+	if targetTable == nil {
+		targetTable, err = plan.dbMap.TableFor(targetVal.Type().Elem(), false)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
@@ -295,6 +315,20 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 	return v
 }
 
+type referenceFilter struct {
+	clause string
+}
+
+func (filter *referenceFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+	return filter.clause, nil, nil
+}
+
+func reference(leftTable, leftCol, rightTable, rightCol string) filters.Filter {
+	return &referenceFilter{
+		clause: fmt.Sprintf("%s.%s = %s.%s", leftTable, leftCol, rightTable, rightCol),
+	}
+}
+
 // mapColumns creates a list of field addresses and column maps, to
 // make looking up the column for a field address easier.  Note that
 // it doesn't do any special handling for overridden fields, because
@@ -309,12 +343,13 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	for _, col := range table.Columns {
 		if value.Type().FieldByIndex(col.FieldIndex()).PkgPath != "" {
+			// TODO: What about anonymous fields?
 			// Don't map unexported fields
 			continue
 		}
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
-		if prefix == "-" {
+		if prefix == "-" || col.ColumnName == "-" {
 			alias = "-"
 		}
 		fieldRef := field.Addr().Interface()
@@ -325,7 +360,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 			for _, prevColMap := range plan.colMap {
 				if plan.hasReference(prevColMap.column, col) {
 					alias = "-"
-					plan.lastRefs = append(plan.lastRefs, filters.Equal(fieldRef, prevColMap.addr))
+					plan.lastRefs = append(plan.lastRefs, reference(prevColMap.quotedTable, prevColMap.quotedColumn, quotedTableName, quotedCol))
 					break
 				}
 			}
@@ -674,9 +709,9 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 			if index != 0 {
 				buffer.WriteString(",")
 			}
-			buffer.WriteString(plan.QuotedTable())
+			buffer.WriteString(m.quotedTable)
 			buffer.WriteString(".")
-			buffer.WriteString(plan.dbMap.Dialect.QuoteField(col.ColumnName))
+			buffer.WriteString(m.quotedColumn)
 			if m.alias != "" {
 				buffer.WriteString(" AS ")
 				buffer.WriteString(m.alias)
