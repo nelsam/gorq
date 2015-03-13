@@ -168,12 +168,16 @@ type JoinFilter struct {
 	AndFilter
 	QuotedJoinTable string
 	Type            string
+	QuotedAlias     string
 }
 
 // JoinClause on a JoinFilter will return the full join clause for use
 // in a SELECT statement.
 func (filter *JoinFilter) JoinClause(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
 	join := filter.Type + " join " + filter.QuotedJoinTable
+	if filter.QuotedAlias != "" && filter.QuotedAlias != "-" {
+		join += " AS " + filter.QuotedAlias
+	}
 	on, args, err := filter.AndFilter.Where(structMap, dialect, startBindIdx)
 	if err != nil {
 		return "", nil, err

@@ -220,7 +220,7 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
 		plan.Errors = append(plan.Errors, errors.New("A query target must be a pointer to struct"))
 	}
-	targetTable, err := plan.mapTable(targetVal)
+	targetTable, _, err := plan.mapTable(targetVal)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
@@ -230,19 +230,19 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	return plan
 }
 
-func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error) {
+func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string, error) {
 	if targetVal.Kind() != reflect.Ptr {
-		return nil, errors.New("All query targets must be pointer types")
+		return nil, "", errors.New("All query targets must be pointer types")
 	}
 
-	prefix := ""
+	alias := ""
 	if plan.table != nil {
-		prefix = "-"
+		alias = "-"
 	}
 	var targetTable *gorp.TableMap
 	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
 		if m.column.TargetTable() != nil {
-			prefix = m.column.JoinAlias()
+			alias = m.column.JoinAlias()
 			targetTable = m.column.TargetTable()
 		}
 	}
@@ -273,26 +273,29 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error)
 	// must already be set.
 	if targetTable != nil && elemType.Kind() == reflect.Ptr {
 		targetVal = targetVal.Elem()
+		if targetVal.IsNil() {
+			targetVal.Set(reflect.New(targetVal.Type().Elem()))
+		}
 	}
 
 	if targetVal.Elem().Kind() != reflect.Struct {
-		return nil, errors.New("gorp: Cannot create query plan - no struct found to map to")
+		return nil, "", errors.New("gorp: Cannot create query plan - no struct found to map to")
 	}
 
 	var err error
 	if targetTable == nil {
 		targetTable, err = plan.dbMap.TableFor(targetVal.Type().Elem(), false)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
 
-	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
-		return nil, err
+	if err = plan.mapColumns(targetTable, targetVal, alias); err != nil {
+		return nil, "", err
 	}
-	return targetTable, nil
+	return targetTable, alias, nil
 }
 
 // fieldByIndex is a copy of v.FieldByIndex, except that it will
@@ -340,7 +343,10 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		plan.colMap = make(structColumnMap, 0, value.NumField())
 	}
 	queryableFields := 0
-	quotedTableName := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
+	quotedTableName := plan.dbMap.Dialect.QuoteField(strings.TrimSuffix(prefix, "_"))
+	if prefix == "" || prefix == "-" {
+		quotedTableName = plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
+	}
 	for _, col := range table.Columns {
 		if value.Type().FieldByIndex(col.FieldIndex()).PkgPath != "" {
 			// TODO: What about anonymous fields?
@@ -448,7 +454,7 @@ func (plan *QueryPlan) storeJoin() {
 func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan interfaces.JoinQuery) {
 	joinPlan = &JoinQueryPlan{QueryPlan: plan}
 	plan.storeJoin()
-	table, err := plan.mapTable(reflect.ValueOf(target))
+	table, alias, err := plan.mapTable(reflect.ValueOf(target))
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		// Add a filter just so the rest of the query methods won't panic
@@ -456,7 +462,11 @@ func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan i
 		return
 	}
 	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-	plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: quotedTable}
+	quotedAlias := ""
+	if alias != "" && alias != "-" {
+		quotedAlias = plan.dbMap.Dialect.QuoteField(strings.TrimSuffix(alias, "_"))
+	}
+	plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: quotedTable, QuotedAlias: quotedAlias}
 	return
 }
 
