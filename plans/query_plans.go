@@ -360,15 +360,31 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-		if alias != "-" && (col.References() != nil || len(col.ReferencedBy()) > 0) {
-			// Check for already-mapped columns that reference or
-			// are referenced by this column.
-			for _, prevColMap := range plan.colMap {
-				if plan.hasReference(prevColMap.column, col) {
-					alias = "-"
-					plan.lastRefs = append(plan.lastRefs, reference(prevColMap.quotedTable, prevColMap.quotedColumn, quotedTableName, quotedCol))
-					break
+		if alias != "-" {
+			// This means we're mapping an embedded struct, so we can
+			// sort of autodetect reference columns.
+			var refMap *fieldColumnMap
+			if col.References() != nil {
+				// Check for already-mapped columns that are
+				// referenced by this column.
+				for _, prevColMap := range plan.colMap {
+					if col.References().Column() == prevColMap.column {
+						alias = "-"
+						refMap = &prevColMap
+						break
+					}
 				}
+			} else if len(col.ReferencedBy()) > 0 {
+				// The way that foreign keys work, columns that are
+				// referenced by other columns will have the same
+				// field reference.
+				fieldMap, err := plan.colMap.fieldMapForPointer(fieldRef)
+				if err == nil {
+					refMap = fieldMap
+				}
+			}
+			if refMap != nil {
+				plan.lastRefs = append(plan.lastRefs, reference(refMap.quotedTable, refMap.quotedColumn, quotedTableName, quotedCol))
 			}
 		}
 		fieldMap := fieldColumnMap{
@@ -387,24 +403,6 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		return errors.New("No fields in the target struct are mappable.")
 	}
 	return
-}
-
-func (plan *QueryPlan) hasReference(a, b *gorp.ColumnMap) bool {
-	if len(a.ReferencedBy()) > 0 && b.References() != nil {
-		for _, ref := range a.ReferencedBy() {
-			if ref.Column() == b {
-				return true
-			}
-		}
-	}
-	if a.References() != nil && len(b.ReferencedBy()) > 0 {
-		for _, ref := range b.ReferencedBy() {
-			if ref.Column() == a {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // Extend returns an extended query, using extensions for the
@@ -934,6 +932,9 @@ type JoinQueryPlan struct {
 }
 
 func (plan *JoinQueryPlan) References() interfaces.JoinQuery {
+	if len(plan.lastRefs) == 0 {
+		plan.Errors = append(plan.Errors, errors.New("No references found to join with"))
+	}
 	plan.QueryPlan.Filter(plan.lastRefs...)
 	return plan
 }
