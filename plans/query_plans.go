@@ -242,7 +242,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string
 	var targetTable *gorp.TableMap
 	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
 		if m.column.TargetTable() != nil {
-			alias = m.column.JoinAlias()
+			alias = m.alias
 			targetTable = m.column.TargetTable()
 		}
 	}
@@ -355,8 +355,10 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		}
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
-		if prefix == "-" || col.ColumnName == "-" {
+		if prefix == "-" {
 			alias = "-"
+		} else if col.JoinAlias() != "" {
+			alias = prefix + col.JoinAlias()
 		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
