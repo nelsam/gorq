@@ -372,6 +372,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 				fieldMap, err := plan.colMap.fieldMapForPointer(fieldRef)
 				if err == nil {
 					plan.lastRefs = append(plan.lastRefs, reference(fieldMap.quotedTable, fieldMap.quotedColumn, quotedTableName, quotedCol))
+					alias = "-"
 				}
 			}
 		}
@@ -619,6 +620,7 @@ func (plan *QueryPlan) whereClause() (string, error) {
 func (plan *QueryPlan) selectJoinClause() (string, error) {
 	buffer := bytes.Buffer{}
 	for _, join := range plan.joins {
+		buffer.WriteString(" ")
 		joinClause, joinArgs, err := join.JoinClause(plan.colMap, plan.dbMap.Dialect, len(plan.args))
 		if err != nil {
 			return "", err
