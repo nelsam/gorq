@@ -360,7 +360,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-		if alias != "-" {
+		if prefix != "-" {
 			// This means we're mapping an embedded struct, so we can
 			// sort of autodetect some reference columns.
 			if len(col.ReferencedBy()) > 0 {
