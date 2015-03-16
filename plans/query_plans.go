@@ -362,29 +362,15 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
 		if alias != "-" {
 			// This means we're mapping an embedded struct, so we can
-			// sort of autodetect reference columns.
-			var refMap *fieldColumnMap
-			if col.References() != nil {
-				// Check for already-mapped columns that are
-				// referenced by this column.
-				for _, prevColMap := range plan.colMap {
-					if col.References().Column() == prevColMap.column {
-						alias = "-"
-						refMap = &prevColMap
-						break
-					}
-				}
-			} else if len(col.ReferencedBy()) > 0 {
+			// sort of autodetect some reference columns.
+			if len(col.ReferencedBy()) > 0 {
 				// The way that foreign keys work, columns that are
 				// referenced by other columns will have the same
 				// field reference.
 				fieldMap, err := plan.colMap.fieldMapForPointer(fieldRef)
 				if err == nil {
-					refMap = fieldMap
+					plan.lastRefs = append(plan.lastRefs, reference(fieldMap.quotedTable, fieldMap.quotedColumn, quotedTableName, quotedCol))
 				}
-			}
-			if refMap != nil {
-				plan.lastRefs = append(plan.lastRefs, reference(refMap.quotedTable, refMap.quotedColumn, quotedTableName, quotedCol))
 			}
 		}
 		fieldMap := fieldColumnMap{
