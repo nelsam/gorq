@@ -686,6 +686,10 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 }
 
 func (plan *QueryPlan) resetArgs() {
+	if subQuery, ok := plan.target.Interface().(subQuery); ok {
+		plan.args = subQuery.getArgs()
+		return
+	}
 	plan.args = nil
 }
 
@@ -703,7 +707,11 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return plan.executor.Select(plan.target.Interface(), query, plan.args...)
+	target := plan.target.Interface()
+	if subQuery, ok := target.(subQuery); ok {
+		target = subQuery.getTarget().Interface()
+	}
+	return plan.executor.Select(target, query, plan.args...)
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
