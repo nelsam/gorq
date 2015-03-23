@@ -191,6 +191,7 @@ type QueryPlan struct {
 	joins          []*filters.JoinFilter
 	assignCols     []string
 	assignBindVars []string
+	assignArgs     []interface{}
 	filters        filters.MultiFilter
 	orderBy        []order
 	groupBy        []string
@@ -260,7 +261,6 @@ func (plan *QueryPlan) mapSubQuery(q subQuery) *gorp.TableMap {
 	}
 	alias := q.QuotedTable()
 	plan.quotedTable = fmt.Sprintf("(%s) as %s", query, alias)
-	plan.args = append(plan.args, q.getArgs()...)
 	for _, m := range q.getColMap() {
 		m.quotedTable = alias
 		plan.colMap = append(plan.colMap, m)
@@ -566,11 +566,13 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 }
 
 func (plan *QueryPlan) resetArgs() {
-	if subQuery, ok := plan.target.Interface().(subQuery); ok {
-		plan.args = subQuery.getArgs()
-		return
-	}
 	plan.args = nil
+	if len(plan.assignArgs) > 0 {
+		plan.args = append(plan.args, plan.assignArgs)
+	}
+	if subQuery, ok := plan.target.Interface().(subQuery); ok {
+		plan.args = append(plan.args, subQuery.getArgs())
+	}
 }
 
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
@@ -582,7 +584,6 @@ func (plan *QueryPlan) Truncate() error {
 
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
-	defer plan.resetArgs()
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
@@ -597,7 +598,6 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 // SelectToTarget will run this query plan as a SELECT statement, and
 // append results directly to the passed in slice pointer.
 func (plan *QueryPlan) SelectToTarget(target interface{}) error {
-	defer plan.resetArgs()
 	targetType := reflect.TypeOf(target)
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
@@ -611,7 +611,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 }
 
 func (plan *QueryPlan) Count() (int64, error) {
-	defer plan.resetArgs()
+	plan.resetArgs()
 	buffer := new(bytes.Buffer)
 	buffer.WriteString("select count(*)")
 	if err := plan.writeSelectSuffix(buffer); err != nil {
@@ -628,6 +628,7 @@ func (plan *QueryPlan) QuotedTable() string {
 }
 
 func (plan *QueryPlan) selectQuery() (string, error) {
+	plan.resetArgs()
 	buffer := new(bytes.Buffer)
 	if err := plan.writeSelectColumns(buffer); err != nil {
 		return "", err
@@ -718,7 +719,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 
 // Insert will run this query plan as an INSERT statement.
 func (plan *QueryPlan) Insert() error {
-	defer plan.resetArgs()
+	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
@@ -763,7 +764,7 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 
 // Update will run this query plan as an UPDATE statement.
 func (plan *QueryPlan) Update() (int64, error) {
-	defer plan.resetArgs()
+	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
@@ -814,7 +815,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 
 // Delete will run this query plan as a DELETE statement.
 func (plan *QueryPlan) Delete() (int64, error) {
-	defer plan.resetArgs()
+	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
@@ -939,7 +940,7 @@ func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) int
 	}
 	plan.assignCols = append(plan.assignCols, column)
 	plan.assignBindVars = append(plan.assignBindVars, plan.dbMap.Dialect.BindVar(len(plan.args)))
-	plan.args = append(plan.args, value)
+	plan.assignArgs = append(plan.assignArgs, value)
 	return plan
 }
 
