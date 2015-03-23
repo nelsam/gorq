@@ -649,6 +649,7 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 }
 
 func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
+	plan.storeJoin()
 	buffer.WriteString(" from ")
 	buffer.WriteString(plan.QuotedTable())
 	joinClause, err := plan.selectJoinClause()
