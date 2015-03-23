@@ -568,10 +568,10 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 func (plan *QueryPlan) resetArgs() {
 	plan.args = nil
 	if len(plan.assignArgs) > 0 {
-		plan.args = append(plan.args, plan.assignArgs)
+		plan.args = append(plan.args, plan.assignArgs...)
 	}
 	if subQuery, ok := plan.target.Interface().(subQuery); ok {
-		plan.args = append(plan.args, subQuery.getArgs())
+		plan.args = append(plan.args, subQuery.getArgs()...)
 	}
 }
 
