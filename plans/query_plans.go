@@ -258,6 +258,10 @@ func (plan *QueryPlan) getArgs() []interface{} {
 	return plan.args
 }
 
+func (plan *QueryPlan) getTable() *gorp.TableMap {
+	return plan.table
+}
+
 func (plan *QueryPlan) mapSubQuery(q subQuery) *gorp.TableMap {
 	if len(q.errors()) != 0 {
 		plan.Errors = append(plan.Errors, q.errors()...)
