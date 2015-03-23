@@ -136,6 +136,18 @@ func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int
 	return orderStr, params, nil
 }
 
+// subQuery is provided to use plan types as sub-queries in from/join
+// clauses.
+type subQuery interface {
+	QuotedTable() string
+	getTable() *gorp.TableMap
+	getTarget() reflect.Value
+	getColMap() structColumnMap
+	errors() []error
+	selectQuery() (string, error)
+	getArgs() []interface{}
+}
+
 // A QueryPlan is a Query.  It returns itself on most method calls;
 // the one exception is Assign(), which returns an AssignQueryPlan (a type of
 // QueryPlan that implements AssignQuery instead of Query).  The return
@@ -218,9 +230,47 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	return plan
 }
 
+func (plan *QueryPlan) getTarget() reflect.Value {
+	return plan.target
+}
+
+func (plan *QueryPlan) getColMap() structColumnMap {
+	return plan.colMap
+}
+
+func (plan *QueryPlan) errors() []error {
+	return plan.Errors
+}
+
+func (plan *QueryPlan) getArgs() []interface{} {
+	return plan.args
+}
+
+func (plan *QueryPlan) mapSubQuery(q subQuery) *gorp.TableMap {
+	if len(q.errors()) != 0 {
+		plan.Errors = append(plan.Errors, q.errors()...)
+	}
+	query, err := q.selectQuery()
+	if err != nil {
+		plan.Errors = append(plan.Errors, err)
+	}
+	alias := q.QuotedTable()
+	plan.quotedTable = fmt.Sprintf("(%s) as %s", query, alias)
+	plan.args = append(plan.args, q.getArgs()...)
+	for _, m := range q.getColMap() {
+		m.quotedTable = alias
+		plan.colMap = append(plan.colMap, m)
+	}
+	return q.getTable()
+}
+
 func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, error) {
 	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
 		return nil, errors.New("gorp: Cannot create query plan - target value must be a pointer to a struct")
+	}
+
+	if subQuery, ok := targetVal.Interface().(subQuery); ok {
+		return plan.mapSubQuery(subQuery), nil
 	}
 
 	targetTable, err := plan.dbMap.TableFor(targetVal.Type().Elem(), false)
