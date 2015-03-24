@@ -2,6 +2,7 @@
 
 set -e
 
+echo "mode: count" > coverage.out
 for Package in $(go list ./...)
 do
     go test -v -race -covermode=count -coverprofile=profile.out "$Package"
