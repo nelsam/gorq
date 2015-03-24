@@ -18,13 +18,6 @@ import (
 	_ "github.com/ziutek/mymysql/godrv"
 )
 
-var (
-	postgresURL = os.Getenv("POSTGRES_TEST_URL")
-	myMySQLURL  = os.Getenv("MY_MYSQL_TEST_URL")
-	mySQLURL    = os.Getenv("MYSQL_TEST_URL")
-	sqliteURL   = os.Getenv("SQLITE_TEST_URL")
-)
-
 type UnmappedStruct struct {
 	Id int
 }
@@ -150,7 +143,7 @@ func runQueryPlanSuite(t *testing.T, dialect gorp.Dialect, connection *sql.DB) {
 
 func TestQueryPlanPostgres(t *testing.T) {
 	dialect := gorp.PostgresDialect{}
-	connection, err := sql.Open("postgres", postgresURL)
+	connection, err := sql.Open("postgres", os.Getenv("POSTGRES_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to postgres: %s", err)
 		return
@@ -160,7 +153,7 @@ func TestQueryPlanPostgres(t *testing.T) {
 
 func TestQueryPlanMyMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mymysql", myMySQLURL)
+	connection, err := sql.Open("mymysql", os.Getenv("MY_MYSQL_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using mysql bindings): %s", err)
 		return
@@ -170,7 +163,7 @@ func TestQueryPlanMyMySql(t *testing.T) {
 
 func TestQueryPlanMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mysql", mySQLURL)
+	connection, err := sql.Open("mysql", os.Getenv("MYSQL_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using native mysql): %s", err)
 		return
@@ -180,7 +173,7 @@ func TestQueryPlanMySql(t *testing.T) {
 
 func TestQueryPlanSqlite(t *testing.T) {
 	dialect := gorp.SqliteDialect{}
-	connection, err := sql.Open("sqlite3", sqliteURL)
+	connection, err := sql.Open("sqlite3", os.Getenv("SQLITE_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to sqlite: %s", err)
 		return
@@ -272,7 +265,7 @@ func runQueryLanguageSuite(t *testing.T, dialect gorp.Dialect, connection *sql.D
 
 func TestQueryLanguagePostgres(t *testing.T) {
 	dialect := gorp.PostgresDialect{}
-	connection, err := sql.Open("postgres", postgresURL)
+	connection, err := sql.Open("postgres", "user=gorptest password=gorptest dbname=gorptest sslmode=disable")
 	if err != nil {
 		t.Errorf("Could not connect to postgres: %s", err)
 		return
@@ -282,7 +275,7 @@ func TestQueryLanguagePostgres(t *testing.T) {
 
 func TestQueryLanguageMyMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mymysql", myMySQLURL)
+	connection, err := sql.Open("mymysql", "gorptest/gorptest/gorptest")
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using mysql bindings): %s", err)
 		return
@@ -292,7 +285,7 @@ func TestQueryLanguageMyMySql(t *testing.T) {
 
 func TestQueryLanguageMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mysql", mySQLURL)
+	connection, err := sql.Open("mysql", "gorptest:gorptest@/gorptest")
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using native mysql): %s", err)
 		return
@@ -302,7 +295,7 @@ func TestQueryLanguageMySql(t *testing.T) {
 
 func TestQueryLanguageSqlite(t *testing.T) {
 	dialect := gorp.SqliteDialect{}
-	connection, err := sql.Open("sqlite3", sqliteURL)
+	connection, err := sql.Open("sqlite3", "/tmp/gorptest.bin")
 	if err != nil {
 		t.Errorf("Could not connect to sqlite: %s", err)
 		return
