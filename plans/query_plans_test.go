@@ -2,6 +2,7 @@ package plans
 
 import (
 	"database/sql"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -142,7 +143,7 @@ func runQueryPlanSuite(t *testing.T, dialect gorp.Dialect, connection *sql.DB) {
 
 func TestQueryPlanPostgres(t *testing.T) {
 	dialect := gorp.PostgresDialect{}
-	connection, err := sql.Open("postgres", "user=gorptest password=gorptest dbname=gorptest sslmode=disable")
+	connection, err := sql.Open("postgres", os.Getenv("POSTGRES_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to postgres: %s", err)
 		return
@@ -152,7 +153,7 @@ func TestQueryPlanPostgres(t *testing.T) {
 
 func TestQueryPlanMyMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mymysql", "gorptest/gorptest/gorptest")
+	connection, err := sql.Open("mymysql", os.Getenv("MY_MYSQL_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using mysql bindings): %s", err)
 		return
@@ -162,7 +163,7 @@ func TestQueryPlanMyMySql(t *testing.T) {
 
 func TestQueryPlanMySql(t *testing.T) {
 	dialect := gorp.MySQLDialect{"InnoDB", "UTF8"}
-	connection, err := sql.Open("mysql", "gorptest:gorptest@/gorptest")
+	connection, err := sql.Open("mysql", os.Getenv("MYSQL_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to mysql (using native mysql): %s", err)
 		return
@@ -172,7 +173,7 @@ func TestQueryPlanMySql(t *testing.T) {
 
 func TestQueryPlanSqlite(t *testing.T) {
 	dialect := gorp.SqliteDialect{}
-	connection, err := sql.Open("sqlite3", "/tmp/gorptest.bin")
+	connection, err := sql.Open("sqlite3", os.Getenv("SQLITE_TEST_URL"))
 	if err != nil {
 		t.Errorf("Could not connect to sqlite: %s", err)
 		return
