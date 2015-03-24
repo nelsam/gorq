@@ -3,7 +3,7 @@ env:
   - GOPATH=/var/cache/drone
   - PATH=$PATH:$GOROOT/bin:$GOPATH/bin
   - POSTGRES_TEST_URL=user=gorptest password=gorptest dbname=gorptest host=localhost sslmode=disable
-  - MY_MYSQL_TEST_URL=gorptest/root
+  - MY_MYSQL_TEST_URL=gorptest/root/
   - MYSQL_TEST_URL=root@/gorptest
   - SQLITE_TEST_URL=/tmp/gorptest.bin
 script:
