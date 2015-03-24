@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 for Package in $(go list ./...)
 do
     go test -v -race -covermode=count -coverprofile=profile.out "$Package"
