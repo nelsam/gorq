@@ -14,7 +14,7 @@ script:
   -
   - go get -t ./...
   - go build ./...
-  - sh ./combined_coverage_tests.sh
+  - ./combined_coverage_tests.sh
 services:
   - postgres
   - mysql
