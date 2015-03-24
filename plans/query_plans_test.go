@@ -19,18 +19,11 @@ import (
 )
 
 var (
-	postgresURL string
-	myMySQLURL  string
-	mySQLURL    string
-	sqliteURL   string
-)
-
-func init() {
 	postgresURL = os.Getenv("POSTGRES_TEST_URL")
-	myMySQLURL = os.Getenv("MY_MYSQL_TEST_URL")
-	mySQLURL = os.Getenv("MYSQL_TEST_URL")
-	sqliteURL = os.Getenv("SQLITE_TEST_URL")
-}
+	myMySQLURL  = os.Getenv("MY_MYSQL_TEST_URL")
+	mySQLURL    = os.Getenv("MYSQL_TEST_URL")
+	sqliteURL   = os.Getenv("SQLITE_TEST_URL")
+)
 
 type UnmappedStruct struct {
 	Id int
