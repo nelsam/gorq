@@ -1072,7 +1072,7 @@ func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) int
 		return plan
 	}
 	plan.assignCols = append(plan.assignCols, column)
-	plan.assignBindVars = append(plan.assignBindVars, plan.dbMap.Dialect.BindVar(len(plan.args)))
+	plan.assignBindVars = append(plan.assignBindVars, plan.dbMap.Dialect.BindVar(len(plan.assignArgs)))
 	plan.assignArgs = append(plan.assignArgs, value)
 	return plan
 }
