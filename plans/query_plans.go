@@ -25,6 +25,10 @@ type fieldColumnMap struct {
 	// alias is used in the query as an alias for this column.
 	alias string
 
+	// prefix is used in the query when sub-fields of this field are
+	// queried.
+	prefix string
+
 	// quotedTable should be the pre-quoted table string for this
 	// column.
 	quotedTable string
@@ -289,14 +293,15 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string
 		return plan.mapSubQuery(subQuery), subQuery.QuotedTable(), nil
 	}
 
-	alias := ""
+	var prefix, alias string
 	if plan.table != nil {
+		prefix = "-"
 		alias = "-"
 	}
 	var targetTable *gorp.TableMap
 	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
 		if m.column.TargetTable() != nil {
-			alias = m.alias
+			prefix, alias = m.prefix, m.alias
 			targetTable = m.column.TargetTable()
 		}
 	}
@@ -346,7 +351,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
 
-	if err = plan.mapColumns(targetTable, targetVal, alias); err != nil {
+	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
 		return nil, "", err
 	}
 	return targetTable, alias, nil
@@ -409,10 +414,12 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 		}
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
+		colPrefix := prefix
 		if prefix == "-" {
 			alias = "-"
 		} else if col.JoinAlias() != "" {
 			alias = prefix + col.JoinAlias()
+			colPrefix = prefix + col.JoinPrefix()
 		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
@@ -434,6 +441,7 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 			addr:         fieldRef,
 			column:       col,
 			alias:        alias,
+			prefix:       colPrefix,
 			quotedTable:  quotedTableName,
 			quotedColumn: quotedCol,
 		}
@@ -505,7 +513,7 @@ func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan i
 	quotedTable := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	quotedAlias := ""
 	if alias != "" && alias != "-" {
-		quotedAlias = plan.dbMap.Dialect.QuoteField(strings.TrimSuffix(alias, "_"))
+		quotedAlias = plan.dbMap.Dialect.QuoteField(alias)
 	}
 	plan.filters = &filters.JoinFilter{Type: joinType, QuotedJoinTable: quotedTable, QuotedAlias: quotedAlias}
 	return
