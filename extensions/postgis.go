@@ -21,13 +21,13 @@ type Geography struct {
 	Lat float64 `json:"lat"`
 }
 
-// String returns a string representation of p.
+// String returns a string representation of g.
 func (g Geography) String() string {
 	return fmt.Sprintf("POINT(%v %v)", g.Lng, g.Lat)
 }
 
 // Scan implements "database/sql".Scanner and will scan the Postgis POINT(x y)
-// into p.
+// into g.
 func (g *Geography) Scan(val interface{}) error {
 	b, err := hex.DecodeString(string(val.([]uint8)))
 	if err != nil {
@@ -63,7 +63,7 @@ func (g *Geography) Scan(val interface{}) error {
 }
 
 // Value implements "database/sql/driver".Valuer and will return the string
-// representation of p by calling the String() method.
+// representation of g by calling the String() method.
 func (g Geography) Value() (driver.Value, error) {
 	return g.String(), nil
 }
