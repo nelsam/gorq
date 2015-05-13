@@ -439,6 +439,7 @@ func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectionQuery 
 	m, err := plan.colMap.fieldMapForPointer(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
+		return plan
 	}
 	m.doSelect = true
 	if m.join != nil {
