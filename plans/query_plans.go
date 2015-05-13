@@ -499,6 +499,11 @@ func (plan *QueryPlan) On(filters ...filters.Filter) interfaces.JoinQuery {
 	return &JoinQueryPlan{QueryPlan: plan}
 }
 
+func (plan *QueryPlan) References() interfaces.JoinQuery {
+	joinQuery := &JoinQueryPlan{QueryPlan: plan}
+	return joinQuery.References()
+}
+
 // Where stores any join filter and allocates a new and filter to use
 // for WHERE clause creation.  If you pass filters to it, they will be
 // passed to plan.Filter().
