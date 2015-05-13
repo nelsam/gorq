@@ -40,7 +40,7 @@ type CombinedFilter struct {
 func (filter *CombinedFilter) ActualValues() []interface{} {
 	values := make([]interface{}, 0, len(filter.subFilters))
 	for _, f := range filter.subFilters {
-		values = append(values, f.ActualValues())
+		values = append(values, f.ActualValues()...)
 	}
 	return values
 }
