@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/filters"
 )
 
@@ -114,17 +113,13 @@ type withinFilter struct {
 	radiusMeters uint
 }
 
-func (f *withinFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	col, err := structMap.LocateTableAndColumn(f.field)
-	if err != nil {
-		return "", nil, err
-	}
-	targetBind, radiusBind := dialect.BindVar(startBindIdx), dialect.BindVar(startBindIdx+1)
-	args := []interface{}{
-		f.target,
-		f.radiusMeters,
-	}
-	return fmt.Sprintf("ST_DWithin(%s, %s, %s)", col, targetBind, radiusBind), args, nil
+func (f *withinFilter) ActualValues() []interface{} {
+	return []interface{}{f.field, f.target, f.radiusMeters}
+}
+
+func (f *withinFilter) Where(values ...string) string {
+	col, targetBind, radiusBind := values[0], values[1], values[2]
+	return fmt.Sprintf("ST_DWithin(%s, %s, %s)", col, targetBind, radiusBind)
 }
 
 // WithinMeters is a filter that checks if a Geography is within a certain
@@ -138,35 +133,13 @@ type containsFilter struct {
 	target    interface{}
 }
 
-func (f *containsFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	args := make([]interface{}, 0, 2)
-	var containerSQL, targetSQL string
-	if _, ok := f.container.(Polygon); ok {
-		args = append(args, f.container)
-		containerSQL = dialect.BindVar(startBindIdx)
-		startBindIdx++
-	} else {
-		col, err := structMap.LocateTableAndColumn(f.container)
-		if err != nil {
-			return "", nil, err
-		}
-		containerSQL = col
-	}
+func (f *containsFilter) ActualValues() []interface{} {
+	return []interface{}{f.container, f.target}
+}
 
-	_, targetIsPoly := f.target.(Polygon)
-	_, targetIsGeo := f.target.(Geography)
-	if targetIsPoly || targetIsGeo {
-		args = append(args, f.target)
-		targetSQL = dialect.BindVar(startBindIdx)
-		startBindIdx++
-	} else {
-		col, err := structMap.LocateTableAndColumn(f.target)
-		if err != nil {
-			return "", nil, err
-		}
-		targetSQL = col
-	}
-	return fmt.Sprintf("ST_Contains(%s::geography::geometry, %s::geography::geometry)", containerSQL, targetSQL), args, nil
+func (f *containsFilter) Where(values ...string) string {
+	container, target := values[0], values[1]
+	return fmt.Sprintf("ST_Contains(%s::geography::geometry, %s::geography::geometry)", container, target)
 }
 
 // Contains is a filter that checks if a GIS geography value is
