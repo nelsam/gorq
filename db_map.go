@@ -1,6 +1,9 @@
 package gorq
 
 import (
+	"errors"
+	"reflect"
+
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/interfaces"
 	"github.com/outdoorsy/gorq/plans"
@@ -20,6 +23,23 @@ type SqlExecutor interface {
 // methods to it.
 type DbMap struct {
 	gorp.DbMap
+	joinOps []plans.JoinOp
+}
+
+func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) error {
+	var (
+		err   error
+		newOp = plans.JoinOp{}
+	)
+	if newOp.Table, err = m.TableFor(reflect.TypeOf(target), false); err != nil {
+		return err
+	}
+	if newOp.Column = newOp.Table.ColMap(fieldPtrOrName); newOp.Column == nil {
+		return errors.New("No column found for the passed in field name or pointer")
+	}
+	newOp.Join = op
+	m.joinOps = append(m.joinOps, newOp)
+	return nil
 }
 
 // Query returns a Query type, which can be used to generate and run
@@ -80,5 +100,5 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
+	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.joinOps...)
 }

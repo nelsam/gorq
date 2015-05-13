@@ -13,142 +13,17 @@ import (
 	"github.com/outdoorsy/gorq/interfaces"
 )
 
-type fieldColumnMap struct {
-	// addr should be the address (pointer value) of the field within
-	// the struct being used to construct this query.
-	addr interface{}
-
-	// column should be the column that matches the field that addr
-	// points to.
-	column *gorp.ColumnMap
-
-	// alias is used in the query as an alias for this column.
-	alias string
-
-	// prefix is used in the query when sub-fields of this field are
-	// queried.
-	prefix string
-
-	// quotedTable should be the pre-quoted table string for this
-	// column.
-	quotedTable string
-
-	// quotedColumn should be the pre-quoted column string for this
-	// column.
-	quotedColumn string
+type tableAlias struct {
+	gorp.TableMap
+	quotedFromClause string
+	dialect          gorp.Dialect
 }
 
-type structColumnMap []fieldColumnMap
-
-// LocateColumn takes an interface value (which should be a
-// pointer to one of the fields on the value that is being used as a
-// reference for query construction) and returns the pre-quoted column
-// name that should be used to reference that value in queries.
-func (structMap structColumnMap) LocateColumn(fieldPtr interface{}) (string, error) {
-	fieldMap, err := structMap.fieldMapForPointer(fieldPtr)
-	if err != nil {
-		return "", err
+func (t tableAlias) tableForFromClause() string {
+	if t.quotedFromClause != "" {
+		return t.quotedFromClause
 	}
-	return fieldMap.quotedColumn, nil
-}
-
-// LocateTableAndColumn takes an interface value (which should be a
-// pointer to one of the fields on the value that is being used as a
-// reference for query construction) and returns the pre-quoted
-// table.column name that should be used to reference that value in
-// some types of queries (mostly where statements and select queries).
-func (structMap structColumnMap) LocateTableAndColumn(fieldPtr interface{}) (string, error) {
-	fieldMap, err := structMap.fieldMapForPointer(fieldPtr)
-	if err != nil {
-		return "", err
-	}
-	return fieldMap.quotedTable + "." + fieldMap.quotedColumn, nil
-}
-
-func (structMap structColumnMap) joinMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
-	for _, fieldMap := range structMap {
-		if fieldMap.addr == fieldPtr {
-			return &fieldMap, nil
-		}
-	}
-	fieldPtrVal := reflect.ValueOf(fieldPtr)
-	addr, value := fieldPtrVal.Pointer(), fieldPtrVal.Elem().Interface()
-	return nil, fmt.Errorf("gorp: Cannot find a field matching the passed in pointer %d (value %v)", addr, value)
-}
-
-// fieldMapForPointer takes a pointer to a struct field and returns
-// the fieldColumnMap for that struct field.
-func (structMap structColumnMap) fieldMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
-	m, err := structMap.joinMapForPointer(fieldPtr)
-	if err != nil {
-		return nil, err
-	}
-	if m.column.Transient {
-		return nil, errors.New("gorp: Cannot run queries against transient columns")
-	}
-	return m, nil
-}
-
-type order struct {
-	fieldOrWrapper interface{}
-	direction      string
-}
-
-func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int) (string, []interface{}, error) {
-	var (
-		wrapper      filters.SqlWrapper
-		allFields    []interface{}
-		multiWrapper filters.MultiSqlWrapper
-	)
-	switch t := o.fieldOrWrapper.(type) {
-	case filters.SqlWrapper:
-		wrapper = t
-		allFields = []interface{}{wrapper.ActualValue()}
-	case filters.MultiSqlWrapper:
-		multiWrapper = t
-		allFields = multiWrapper.ActualValues()
-	default:
-		allFields = []interface{}{o.fieldOrWrapper}
-	}
-	// OrderBy needs at least one reference to a column of some sort.
-	fieldFound := false
-	columnsAndFields := make([]string, 0, len(allFields))
-	params := make([]interface{}, 0, len(allFields))
-	for _, field := range allFields {
-		if reflect.TypeOf(field).Kind() == reflect.Ptr {
-			column, err := colMap.LocateTableAndColumn(field)
-			if err != nil {
-				return "", nil, err
-			}
-			columnsAndFields = append(columnsAndFields, column)
-			fieldFound = true
-		} else {
-			columnsAndFields = append(columnsAndFields, dialect.BindVar(bindIdx))
-			params = append(params, field)
-			bindIdx++
-		}
-	}
-	if !fieldFound {
-		return "", nil, errors.New("OrderBy requires a pointer to a struct field or " +
-			"a wrapper with at least one struct field pointer as an actual value.")
-	}
-	var orderStr string
-	if wrapper != nil {
-		orderStr = wrapper.WrapSql(columnsAndFields[0])
-	} else if multiWrapper != nil {
-		orderStr = multiWrapper.WrapSql(columnsAndFields...)
-	} else {
-		orderStr = columnsAndFields[0]
-	}
-	direction := strings.ToLower(o.direction)
-	switch direction {
-	case "asc", "desc":
-		orderStr += " " + direction
-	case "":
-	default:
-		return "", nil, errors.New(`gorp: Order by direction must be empty string, "asc", or "desc"`)
-	}
-	return orderStr, params, nil
+	return t.dialect.QuotedTableForQuery(t.SchemaName, t.TableName)
 }
 
 // subQuery is provided to use plan types as sub-queries in from/join
@@ -161,6 +36,22 @@ type subQuery interface {
 	errors() []error
 	selectQuery() (string, error)
 	getArgs() []interface{}
+}
+
+// UnmappedSubQuery is an interface that subqueries which do not have
+// access to details about the table and struct field maps may
+// implement.
+type UnmappedSubQuery interface {
+	Target() interface{}
+	SelectQuery(table *gorp.TableMap, col *gorp.ColumnMap, tableAlias string, tablePrefix string) (query string, columns []string)
+}
+
+type JoinFunc func(parent, field interface{}) (joinType string, joinTarget, selectionField interface{}, constraints []filters.Filter)
+
+type JoinOp struct {
+	Table  *gorp.TableMap
+	Column *gorp.ColumnMap
+	Join   JoinFunc
 }
 
 // A QueryPlan is a Query.  It returns itself on most method calls;
@@ -219,7 +110,7 @@ type QueryPlan struct {
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, joinOps ...JoinOp) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -237,13 +128,14 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	if targetVal.Kind() != reflect.Ptr || targetVal.Elem().Kind() != reflect.Struct {
 		plan.Errors = append(plan.Errors, errors.New("A query target must be a pointer to struct"))
 	}
-	targetTable, _, err := plan.mapTable(targetVal)
+	targetTable, _, err := plan.mapTable(targetVal, joinOps...)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
 	}
 	plan.target = targetVal
-	plan.table = targetTable
+	plan.table = &targetTable.TableMap
+	plan.quotedTable = targetTable.tableForFromClause()
 	return plan
 }
 
@@ -267,7 +159,7 @@ func (plan *QueryPlan) getTable() *gorp.TableMap {
 	return plan.table
 }
 
-func (plan *QueryPlan) mapSubQuery(q subQuery) *gorp.TableMap {
+func (plan *QueryPlan) mapSubQuery(q subQuery) *tableAlias {
 	if len(q.errors()) != 0 {
 		plan.Errors = append(plan.Errors, q.errors()...)
 	}
@@ -276,21 +168,30 @@ func (plan *QueryPlan) mapSubQuery(q subQuery) *gorp.TableMap {
 		plan.Errors = append(plan.Errors, err)
 	}
 	alias := q.QuotedTable()
-	plan.quotedTable = fmt.Sprintf("(%s) as %s", query, alias)
+	quotedFromClause := fmt.Sprintf("(%s) as %s", query, alias)
 	for _, m := range q.getColMap() {
 		m.quotedTable = alias
 		plan.colMap = append(plan.colMap, m)
 	}
-	return q.getTable()
+	return &tableAlias{TableMap: *q.getTable(), dialect: plan.dbMap.Dialect, quotedFromClause: quotedFromClause}
 }
 
-func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string, error) {
+func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*tableAlias, string, error) {
 	if targetVal.Kind() != reflect.Ptr {
 		return nil, "", errors.New("All query targets must be pointer types")
 	}
 
 	if subQuery, ok := targetVal.Interface().(subQuery); ok {
+		// This is one of our QueryPlan types, or an extended version
+		// of one of them.
 		return plan.mapSubQuery(subQuery), subQuery.QuotedTable(), nil
+	}
+
+	// UnmappedSubQuery types are for user-generated sub-queries, so
+	// we still have to do a fair bit of mapping work.
+	subQuery, isSubQuery := targetVal.Interface().(UnmappedSubQuery)
+	if isSubQuery {
+		targetVal = reflect.ValueOf(subQuery.Target())
 	}
 
 	var prefix, alias string
@@ -298,10 +199,14 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string
 		prefix = "-"
 		alias = "-"
 	}
-	var targetTable *gorp.TableMap
+	var (
+		targetTable *gorp.TableMap
+		joinColumn  *gorp.ColumnMap
+	)
 	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
 		if m.column.TargetTable() != nil {
 			prefix, alias = m.prefix, m.alias
+			joinColumn = m.column
 			targetTable = m.column.TargetTable()
 		}
 	}
@@ -351,10 +256,25 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value) (*gorp.TableMap, string
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
 
-	if err = plan.mapColumns(targetTable, targetVal, prefix); err != nil {
+	if isSubQuery {
+		// Get the columns from the sub-query's select statement.
+		query, columns := subQuery.SelectQuery(targetTable, joinColumn, alias, prefix)
+		for _, field := range plan.colMap {
+			for i, colName := range columns {
+				switch colName {
+				case field.column.ColumnName, field.column.JoinAlias():
+					field.alias = colName
+					columns = append(columns[:i], columns[i+1:]...)
+					break
+				}
+			}
+		}
+		return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
+	}
+	if err = plan.mapColumns(targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
 		return nil, "", err
 	}
-	return targetTable, alias, nil
+	return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect}, alias, nil
 }
 
 // fieldByIndex is a copy of v.FieldByIndex, except that it will
@@ -381,8 +301,12 @@ type referenceFilter struct {
 	clause string
 }
 
-func (filter *referenceFilter) Where(structMap filters.TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	return filter.clause, nil, nil
+func (filter *referenceFilter) ActualValues() []interface{} {
+	return nil
+}
+
+func (filter *referenceFilter) Where(...string) string {
+	return filter.clause
 }
 
 func reference(leftTable, leftCol, rightTable, rightCol string) filters.Filter {
@@ -396,7 +320,7 @@ func reference(leftTable, leftCol, rightTable, rightCol string) filters.Filter {
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, prefix string, parents ...string) (err error) {
+func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, value reflect.Value, prefix string, joinOps ...JoinOp) (err error) {
 	value = value.Elem()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
@@ -438,12 +362,21 @@ func (plan *QueryPlan) mapColumns(table *gorp.TableMap, value reflect.Value, pre
 			}
 		}
 		fieldMap := fieldColumnMap{
-			addr:         fieldRef,
+			parent:       parent,
+			field:        fieldRef,
+			selectTarget: fieldRef,
 			column:       col,
 			alias:        alias,
 			prefix:       colPrefix,
 			quotedTable:  quotedTableName,
 			quotedColumn: quotedCol,
+			doSelect:     alias != "-",
+		}
+		for _, op := range joinOps {
+			if table == op.Table && col == op.Column {
+				fieldMap.join = op.Join
+				break
+			}
 		}
 		plan.colMap = append(plan.colMap, fieldMap)
 		if !col.Transient {
@@ -480,6 +413,40 @@ func (plan *QueryPlan) Extend() interface{} {
 		return nil
 	}
 	return extendedQuery
+}
+
+// Fields restricts the columns being selected in a select query to
+// just those matching the passed in field pointers.
+func (plan *QueryPlan) Fields(fields ...interface{}) interfaces.SelectQuery {
+	for _, field := range plan.colMap {
+		field.doSelect = false
+	}
+	for _, field := range fields {
+		plan.AddField(field)
+	}
+	return plan
+}
+
+// AddField adds a field to the select statement.  Some fields (for
+// example, fields that are processed via JoinOp values passed to
+// Query()) are not mapped in the query by default, and you may use
+// AddField to request that they are selected.
+//
+// Note that fields handled by JoinOp values should *not* be
+// explicitly joined to using methods like Join or LeftJoin, but added
+// using AddField instead.
+func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectQuery {
+	m, err := plan.colMap.fieldMapForPointer(fieldPtr)
+	if err != nil {
+		plan.Errors = append(plan.Errors, err)
+	}
+	m.doSelect = true
+	if m.join != nil {
+		joinType, joinTarget, joinField, constraints := m.join(m.parent, m.field)
+		plan.JoinType(joinType, joinTarget).On(constraints...)
+		m.selectTarget = joinField
+	}
+	return plan
 }
 
 // Assign sets up an assignment operation to assign the passed in
@@ -668,10 +635,16 @@ func (plan *QueryPlan) whereClause() (string, error) {
 	if plan.filters == nil {
 		return "", nil
 	}
-	where, whereArgs, err := plan.filters.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
-	if err != nil {
-		return "", err
+	whereArgs := plan.filters.ActualValues()
+	whereVals := make([]string, 0, len(whereArgs))
+	for _, arg := range whereArgs {
+		val, err := plan.argOrColumn(arg)
+		if err != nil {
+			return "", err
+		}
+		whereVals = append(whereVals, val)
 	}
+	where := plan.filters.Where(whereVals...)
 	if where != "" {
 		plan.args = append(plan.args, whereArgs...)
 		return " where " + where, nil
@@ -683,10 +656,16 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 	buffer := bytes.Buffer{}
 	for _, join := range plan.joins {
 		buffer.WriteString(" ")
-		joinClause, joinArgs, err := join.JoinClause(plan.colMap, plan.dbMap.Dialect, len(plan.args))
-		if err != nil {
-			return "", err
+		joinArgs := join.ActualValues()
+		joinVals := make([]string, 0, len(joinArgs))
+		for _, arg := range joinArgs {
+			val, err := plan.argOrColumn(arg)
+			if err != nil {
+				return "", err
+			}
+			joinVals = append(joinVals, val)
 		}
+		joinClause := join.JoinClause(joinVals...)
 		buffer.WriteString(joinClause)
 		plan.args = append(plan.args, joinArgs...)
 	}
@@ -767,20 +746,82 @@ func (plan *QueryPlan) selectQuery() (string, error) {
 	return buffer.String(), nil
 }
 
+// argOrColumn returns the string that should be used to represent a
+// value in a query.  If the value is detected to be a field, an error
+// will be returned if the field cannot be selected.  If the value is
+// used as an argument, it will be appended to args and the returned
+// string will be the bind value.
+func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err error) {
+	switch src := value.(type) {
+	case filters.SqlWrapper:
+		value = src.ActualValue()
+		wrapperVal, err := plan.argOrColumn(value)
+		if err != nil {
+			return "", err
+		}
+		return src.WrapSql(wrapperVal), nil
+	case filters.MultiSqlWrapper:
+		values := src.ActualValues()
+		wrapperVals := make([]string, 0, len(values))
+		for _, val := range values {
+			wrapperVal, err := plan.argOrColumn(val)
+			if err != nil {
+				return "", err
+			}
+			wrapperVals = append(wrapperVals, wrapperVal)
+		}
+		return src.WrapSql(wrapperVals...), nil
+	default:
+		if reflect.TypeOf(value).Kind() == reflect.Ptr {
+			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
+		} else {
+			plan.args = append(plan.args, value)
+			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
+		}
+	}
+	return
+}
+
 func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
 	buffer.WriteString("select ")
 	for index, m := range plan.colMap {
-		col := m.column
-		if !col.Transient && m.alias != "-" {
+		if m.doSelect {
 			if index != 0 {
 				buffer.WriteString(",")
 			}
-			buffer.WriteString(m.quotedTable)
-			buffer.WriteString(".")
-			buffer.WriteString(m.quotedColumn)
+			var err error
+			selectClause := m.quotedTable + "." + m.quotedColumn
+			if m.selectTarget != m.field {
+				switch src := m.selectTarget.(type) {
+				case filters.SqlWrapper:
+					actualValue := src.ActualValue()
+					sqlValue, err := plan.argOrColumn(actualValue)
+					if err != nil {
+						return err
+					}
+					selectClause = src.WrapSql(sqlValue)
+				case filters.MultiSqlWrapper:
+					values := src.ActualValues()
+					sqlValues := make([]string, 0, len(values))
+					for _, v := range values {
+						sqlValue, err := plan.argOrColumn(v)
+						if err != nil {
+							return err
+						}
+						sqlValues = append(sqlValues, sqlValue)
+					}
+					selectClause = src.WrapSql(sqlValues...)
+				default:
+					selectClause, err = plan.argOrColumn(m.field)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			buffer.WriteString(selectClause)
 			if m.alias != "" {
 				buffer.WriteString(" AS ")
 				buffer.WriteString(m.alias)
@@ -885,7 +926,16 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 	whereBuffer := bytes.Buffer{}
 	for _, join := range plan.joins {
 		fromSlice = append(fromSlice, join.QuotedJoinTable)
-		whereClause, whereArgs, err := join.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
+		whereArgs := join.ActualValues()
+		whereVals := make([]string, 0, len(whereArgs))
+		for _, arg := range whereArgs {
+			val, err := plan.argOrColumn(arg)
+			if err != nil {
+				return "", "", err
+			}
+			whereVals = append(whereVals, val)
+		}
+		whereClause := join.Where(whereVals...)
 		if err != nil {
 			return "", "", err
 		}
