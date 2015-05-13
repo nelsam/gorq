@@ -370,7 +370,7 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 			prefix:       colPrefix,
 			quotedTable:  quotedTableName,
 			quotedColumn: quotedCol,
-			doSelect:     alias != "-",
+			doSelect:     !col.Transient,
 		}
 		for _, op := range joinOps {
 			if table == op.Table && col == op.Column {
