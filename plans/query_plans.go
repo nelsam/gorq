@@ -651,7 +651,6 @@ func (plan *QueryPlan) whereClause() (string, error) {
 	}
 	where := plan.filters.Where(whereVals...)
 	if where != "" {
-		plan.args = append(plan.args, whereArgs...)
 		return " where " + where, nil
 	}
 	return "", nil
@@ -672,7 +671,6 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 		}
 		joinClause := join.JoinClause(joinVals...)
 		buffer.WriteString(joinClause)
-		plan.args = append(plan.args, joinArgs...)
 	}
 	return buffer.String(), nil
 }
@@ -780,8 +778,8 @@ func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err erro
 		if reflect.TypeOf(value).Kind() == reflect.Ptr {
 			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
 		} else {
-			plan.args = append(plan.args, value)
 			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
+			plan.args = append(plan.args, value)
 		}
 	}
 	return
@@ -945,7 +943,6 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 			return "", "", err
 		}
 		whereBuffer.WriteString(whereClause)
-		plan.args = append(plan.args, whereArgs...)
 	}
 	return strings.Join(fromSlice, ", "), whereBuffer.String(), nil
 }
