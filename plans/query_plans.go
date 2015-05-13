@@ -417,7 +417,7 @@ func (plan *QueryPlan) Extend() interface{} {
 
 // Fields restricts the columns being selected in a select query to
 // just those matching the passed in field pointers.
-func (plan *QueryPlan) Fields(fields ...interface{}) interfaces.SelectQuery {
+func (plan *QueryPlan) Fields(fields ...interface{}) interfaces.SelectionQuery {
 	for _, field := range plan.colMap {
 		field.doSelect = false
 	}
@@ -435,7 +435,7 @@ func (plan *QueryPlan) Fields(fields ...interface{}) interfaces.SelectQuery {
 // Note that fields handled by JoinOp values should *not* be
 // explicitly joined to using methods like Join or LeftJoin, but added
 // using AddField instead.
-func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectQuery {
+func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectionQuery {
 	m, err := plan.colMap.fieldMapForPointer(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
