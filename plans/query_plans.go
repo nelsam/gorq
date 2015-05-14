@@ -16,20 +16,32 @@ import (
 )
 
 var (
-	tableCacheMap  = map[string][]string{}
+	tableCacheMap  = map[string]map[string]struct{}{}
 	tableCacheLock sync.RWMutex
 )
 
 func addTableCacheMapEntry(tableKey, cacheKey string) {
 	tableCacheLock.Lock()
-	tableCacheMap[tableKey] = append(tableCacheMap[tableKey], cacheKey)
+	if tableCacheMap[tableKey] == nil {
+		tableCacheMap[tableKey] = map[string]struct{}{cacheKey: {}}
+	} else {
+		tableCacheMap[tableKey][cacheKey] = struct{}{}
+	}
 	tableCacheLock.Unlock()
 }
 func getTableCacheMapEntry(tableKey string) []string {
-	var entries []string
+	var cacheKeys map[string]struct{}
 	tableCacheLock.RLock()
-	entries = tableCacheMap[tableKey]
+	cacheKeys = tableCacheMap[tableKey]
 	tableCacheLock.RUnlock()
+
+	entries := make([]string, len(cacheKeys))
+	i := 0
+	for k := range cacheKeys {
+		entries[i] = k
+		i++
+	}
+
 	return entries
 }
 
