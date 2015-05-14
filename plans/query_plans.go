@@ -736,9 +736,12 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 	if plan.cacheable {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
-		data, err := getCacheData(cacheKey, plan.target, plan.memCache)
-		if err == nil { // fail silently - graceful fallback
-			return data, nil
+		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
+		if err == nil {
+			data, err := getCacheData(cacheKey, plan.target, table, plan.memCache)
+			if err == nil { // fail silently - graceful fallback
+				return data, nil
+			}
 		}
 	}
 

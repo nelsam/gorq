@@ -15,7 +15,7 @@ const defaultCacheExpirationTime = 0 // never expire
 func prepareForCache(data interface{}) (string, error) {
 	var b bytes.Buffer
 	w := gzip.NewWriter(&b)
-	err := json.NewEncoder(w).Encode(convertToMemcacheVal(data))
+	err := json.NewEncoder(w).Encode(encodeForMemcache(data))
 	if err != nil {
 		w.Close()
 		return "", err
@@ -32,7 +32,7 @@ func prepareForCache(data interface{}) (string, error) {
 	return string(b.Bytes()), nil
 }
 
-func restoreFromCache(encoded string, targetType reflect.Value) ([]interface{}, error) {
+func restoreFromCache(encoded string, targetType reflect.Value, table reflect.Type) ([]interface{}, error) {
 	r, err := gzip.NewReader(strings.NewReader(encoded))
 	if err != nil {
 		r.Close()
@@ -50,9 +50,13 @@ func restoreFromCache(encoded string, targetType reflect.Value) ([]interface{}, 
 	}
 
 	tv := reflect.ValueOf(typed)
-	data := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf([]interface{}{})), tv.Len(), tv.Cap()).Interface().([]interface{})
-	for i := range data {
-		data[i] = tv.Index(i).Interface()
+	data := []interface{}{}
+	for i := 0; i < tv.Len(); i++ {
+		if targetType.Type().Kind() == reflect.Map {
+			data = append(data, tv.Index(i).Interface())
+		} else {
+			data = append(data, decodeFromMemcache(tv.Index(i).Interface(), targetType, table))
+		}
 	}
 
 	return data, nil
@@ -67,12 +71,12 @@ func setCacheData(cacheKey string, data interface{}, cache *mc.Conn) error {
 	return err
 }
 
-func getCacheData(cacheKey string, targetType reflect.Value, cache *mc.Conn) ([]interface{}, error) {
+func getCacheData(cacheKey string, targetType reflect.Value, table reflect.Type, cache *mc.Conn) ([]interface{}, error) {
 	s, _, _, err := cache.Get(cacheKey)
 	if err != nil {
 		return nil, err
 	}
-	return restoreFromCache(s, targetType)
+	return restoreFromCache(s, targetType, table)
 }
 
 func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
@@ -85,7 +89,7 @@ func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
 	return nil
 }
 
-func convertToMemcacheVal(data interface{}) interface{} {
+func encodeForMemcache(data interface{}) interface{} {
 	val := reflect.ValueOf(data)
 	if val.Kind() == reflect.Ptr {
 		if val.IsNil() {
@@ -100,7 +104,7 @@ func convertToMemcacheVal(data interface{}) interface{} {
 		res := make([]interface{}, 0, val.Len())
 		for i := 0; i < val.Len(); i++ {
 			elem := val.Index(i)
-			res = append(res, convertToMemcacheVal(elem.Interface()))
+			res = append(res, encodeForMemcache(elem.Interface()))
 		}
 		return res
 	case reflect.Struct:
@@ -112,15 +116,45 @@ func convertToMemcacheVal(data interface{}) interface{} {
 			if idx := strings.IndexRune(name, ','); idx >= 0 {
 				name = name[:idx]
 			}
-			res[name] = convertToMemcacheVal(field.Interface())
+			res[name] = encodeForMemcache(field.Interface())
 		}
 		return res
 	case reflect.Map:
 		res := make(map[string]interface{})
 		keys := val.MapKeys()
 		for _, key := range keys {
-			res[key.String()] = convertToMemcacheVal(val.MapIndex(key))
+			res[key.String()] = encodeForMemcache(val.MapIndex(key))
 		}
 	}
+	return data
+}
+
+func decodeFromMemcache(data interface{}, targetType reflect.Value, table reflect.Type) interface{} {
+	dv := reflect.ValueOf(data)
+	switch dv.Kind() {
+	case reflect.Slice, reflect.Array:
+		res := reflect.MakeSlice(dv.Type(), dv.Len(), dv.Cap())
+		for i := 0; i < dv.Len(); i++ {
+			decoded := decodeFromMemcache(dv.Index(i).Interface(), dv.Index(i), dv.Index(i).Type())
+			res = reflect.Append(res, reflect.ValueOf(decoded))
+		}
+		return res
+	case reflect.Struct:
+		var elem reflect.Value
+		if targetType.Kind() == reflect.Ptr {
+			elem = reflect.Zero(targetType.Type())
+		} else {
+			elem = reflect.New(targetType.Type().Elem())
+		}
+	case reflect.Map:
+		res := reflect.MakeMap(dv.Type())
+		for _, key := range dv.MapKeys() {
+			val := dv.MapIndex(key)
+			decoded := decodeFromMemcache(val.Interface(), val, val.Type())
+			val.SetMapIndex(key, reflect.ValueOf(decoded))
+		}
+		return res
+	}
+
 	return data
 }
