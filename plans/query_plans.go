@@ -747,12 +747,14 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 	if plan.cacheable && plan.memCache != nil {
-		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
-		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
+		cacheKey := generateCacheKey(query, plan)
+		table, err := getTableForCache(plan)
 		if err == nil {
 			data, err := getCacheData(cacheKey, plan.target, table, plan.memCache)
 			if err == nil { // fail silently - graceful fallback
 				return data, nil
+			} else if err != mc.ErrNotFound {
+				fmt.Println("error getting from cache", plan.table.TableName, err)
 			}
 		}
 	}
@@ -767,13 +769,17 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cacheable && plan.memCache != nil {
-		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		fmt.Println("setting in cache", plan.table.TableName, reflect.TypeOf(target).Name())
+		cacheKey := generateCacheKey(query, plan)
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		addTableCacheMapEntry(tableKey, cacheKey)
 		for _, join := range plan.joins {
 			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
 		}
-		setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
+		err = setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
+		if err != nil {
+			fmt.Println("error setting in cache", plan.table.TableName, err)
+		}
 	} else {
 		fmt.Println("didn't run in select", plan.cacheable, plan.target.Type().Name())
 	}
@@ -794,9 +800,9 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	}
 
 	if plan.cacheable && plan.memCache != nil {
-		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
+		table, err := getTableForCache(plan)
 		if err == nil {
-			cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+			cacheKey := generateCacheKey(query, plan)
 			data, err := getCacheData(cacheKey, reflect.ValueOf(map[string]interface{}{}), table, plan.memCache)
 			if err == nil { // fail silently - graceful fallback
 				targetVal := reflect.ValueOf(target)
@@ -818,7 +824,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 	if plan.cacheable && plan.memCache != nil {
-		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		cacheKey := generateCacheKey(query, plan)
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		addTableCacheMapEntry(tableKey, cacheKey)
 		for _, join := range plan.joins {

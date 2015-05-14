@@ -3,6 +3,8 @@ package plans
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -158,4 +160,18 @@ func decodeFromMemcache(from interface{}, to reflect.Value, table *gorp.TableMap
 		// bool, float64, string, or nil
 		return to.Interface()
 	}
+}
+
+func generateCacheKey(query string, plan *QueryPlan) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s: %v", query, plan.args)))
+	cacheKey := base64.StdEncoding.EncodeToString(digest[:])
+	return cacheKey
+}
+
+func getTableForCache(plan *QueryPlan) (*gorp.TableMap, error) {
+	e := plan.target
+	if e.Kind() == reflect.Ptr {
+		e = e.Elem()
+	}
+	return plan.dbMap.TableFor(e.Type(), false)
 }
