@@ -966,12 +966,23 @@ func (plan *QueryPlan) Insert() error {
 	buffer.WriteString(")")
 	_, err := plan.executor.Exec(buffer.String(), plan.args...)
 
+	plan.invalidateCache()
+
+	return err
+}
+
+func (plan *QueryPlan) invalidateCache() {
 	if plan.cacheable {
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
+		for _, typeToInvalidate := range plan.invalidate {
+			table, err := plan.dbMap.TableFor(reflect.TypeOf(typeToInvalidate), false)
+			if err == nil {
+				tableKey := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
+				evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache)
+			}
+		}
 	}
-
-	return err
 }
 
 // joinFromAndWhereClause will return the from and where clauses for
@@ -1040,10 +1051,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 		return -1, err
 	}
 
-	if plan.cacheable {
-		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
-	}
+	plan.invalidateCache()
 
 	return rows, nil
 }
@@ -1087,10 +1095,7 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		return -1, err
 	}
 
-	if plan.cacheable {
-		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
-	}
+	plan.invalidateCache()
 
 	return rows, nil
 }
