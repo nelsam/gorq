@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 
 	"github.com/memcachier/mc"
+	"github.com/outdoorsy/gorp"
 )
 
 const defaultCacheExpirationTime = 0 // never expire
@@ -32,15 +34,15 @@ func prepareForCache(data interface{}) (string, error) {
 	return string(b.Bytes()), nil
 }
 
-func restoreFromCache(encoded string, targetType reflect.Value, table reflect.Type) ([]interface{}, error) {
+func restoreFromCache(encoded string, target reflect.Value, table *gorp.TableMap) ([]interface{}, error) {
 	r, err := gzip.NewReader(strings.NewReader(encoded))
 	if err != nil {
 		r.Close()
 		return nil, err
 	}
 
-	typed := reflect.Zero(reflect.SliceOf(targetType.Type())).Interface()
-	err = json.NewDecoder(r).Decode(&typed)
+	var data interface{}
+	err = json.NewDecoder(r).Decode(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -49,17 +51,21 @@ func restoreFromCache(encoded string, targetType reflect.Value, table reflect.Ty
 		return nil, err
 	}
 
-	tv := reflect.ValueOf(typed)
-	data := []interface{}{}
-	for i := 0; i < tv.Len(); i++ {
-		if targetType.Type().Kind() == reflect.Map {
-			data = append(data, tv.Index(i).Interface())
-		} else {
-			data = append(data, decodeFromMemcache(tv.Index(i).Interface(), targetType, table))
-		}
+	var elem reflect.Value
+	if target.Kind() == reflect.Ptr {
+		elem = reflect.Zero(target.Type())
+	} else {
+		elem = reflect.New(target.Type().Elem())
 	}
+	data = decodeFromMemcache(data, elem, table)
 
-	return data, nil
+	switch src := data.(type) {
+	case interface{}:
+		return []interface{}{src}, nil
+	case []interface{}:
+		return src, nil
+	}
+	return nil, errors.New("return type may only be []interface{}. it was: " + reflect.TypeOf(data).Name())
 }
 
 func setCacheData(cacheKey string, data interface{}, cache *mc.Conn) error {
@@ -71,12 +77,12 @@ func setCacheData(cacheKey string, data interface{}, cache *mc.Conn) error {
 	return err
 }
 
-func getCacheData(cacheKey string, targetType reflect.Value, table reflect.Type, cache *mc.Conn) ([]interface{}, error) {
+func getCacheData(cacheKey string, target reflect.Value, table *gorp.TableMap, cache *mc.Conn) ([]interface{}, error) {
 	s, _, _, err := cache.Get(cacheKey)
 	if err != nil {
 		return nil, err
 	}
-	return restoreFromCache(s, targetType, table)
+	return restoreFromCache(s, target, table)
 }
 
 func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
@@ -129,32 +135,24 @@ func encodeForMemcache(data interface{}) interface{} {
 	return data
 }
 
-func decodeFromMemcache(data interface{}, targetType reflect.Value, table reflect.Type) interface{} {
-	dv := reflect.ValueOf(data)
-	switch dv.Kind() {
-	case reflect.Slice, reflect.Array:
-		res := reflect.MakeSlice(dv.Type(), dv.Len(), dv.Cap())
-		for i := 0; i < dv.Len(); i++ {
-			decoded := decodeFromMemcache(dv.Index(i).Interface(), dv.Index(i), dv.Index(i).Type())
-			res = reflect.Append(res, reflect.ValueOf(decoded))
+func decodeFromMemcache(from interface{}, to reflect.Value, table *gorp.TableMap) interface{} {
+	switch src := from.(type) {
+	case []interface{}:
+		for _, v := range src {
+			reflect.Append(to, reflect.ValueOf(decodeFromMemcache(v, to, table)))
 		}
-		return res
-	case reflect.Struct:
-		var elem reflect.Value
-		if targetType.Kind() == reflect.Ptr {
-			elem = reflect.Zero(targetType.Type())
-		} else {
-			elem = reflect.New(targetType.Type().Elem())
+		return to.Interface()
+	case map[string]interface{}:
+		for k, v := range src {
+			col := table.ColMap(k)
+			if col == nil {
+				// return an error, probably, since the target type does not have a field to apply this value to
+			}
+			to.FieldByIndex(col.FieldIndex()).Set(reflect.ValueOf(v))
 		}
-	case reflect.Map:
-		res := reflect.MakeMap(dv.Type())
-		for _, key := range dv.MapKeys() {
-			val := dv.MapIndex(key)
-			decoded := decodeFromMemcache(val.Interface(), val, val.Type())
-			val.SetMapIndex(key, reflect.ValueOf(decoded))
-		}
-		return res
+		return to.Interface()
+	default:
+		// bool, float64, string, or nil
+		return to.Interface()
 	}
-
-	return data
 }

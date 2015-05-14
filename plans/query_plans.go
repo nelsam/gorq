@@ -794,19 +794,22 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	}
 
 	if plan.cacheable {
-		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
-		data, err := getCacheData(cacheKey, reflect.ValueOf(map[string]interface{}{}), plan.memCache)
-		if err == nil { // fail silently - graceful fallback
-			targetVal := reflect.ValueOf(target)
-			for _, item := range data {
-				empty := reflect.New(targetVal.Type().Elem().Elem())
-				from := reflect.ValueOf(item)
-				for _, key := range from.MapKeys() {
-					field := empty.FieldByIndex(plan.table.ColMap(key).FieldIndex())
-					field.Set(from.MapIndex(key))
+		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
+		if err == nil {
+			cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+			data, err := getCacheData(cacheKey, reflect.ValueOf(map[string]interface{}{}), table, plan.memCache)
+			if err == nil { // fail silently - graceful fallback
+				targetVal := reflect.ValueOf(target)
+				for _, item := range data {
+					empty := reflect.New(targetVal.Type().Elem().Elem())
+					from := reflect.ValueOf(item)
+					for _, key := range from.MapKeys() {
+						field := empty.FieldByIndex(plan.table.ColMap(key).FieldIndex())
+						field.Set(from.MapIndex(key))
+					}
 				}
+				return nil
 			}
-			return nil
 		}
 	}
 
