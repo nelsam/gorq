@@ -746,7 +746,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if plan.cacheable {
+	if plan.cacheable && plan.memCache != nil {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
 		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
 		if err == nil {
@@ -766,7 +766,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if plan.cacheable {
+	if plan.cacheable && plan.memCache != nil {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		addTableCacheMapEntry(tableKey, cacheKey)
@@ -793,7 +793,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 
-	if plan.cacheable {
+	if plan.cacheable && plan.memCache != nil {
 		table, err := plan.dbMap.TableFor(plan.target.Type(), false)
 		if err == nil {
 			cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
@@ -814,7 +814,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	}
 
 	_, err = plan.executor.Select(target, query, plan.args...)
-	if plan.cacheable {
+	if plan.cacheable && plan.memCache != nil {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		addTableCacheMapEntry(tableKey, cacheKey)
@@ -972,7 +972,7 @@ func (plan *QueryPlan) Insert() error {
 }
 
 func (plan *QueryPlan) invalidateCache() {
-	if plan.cacheable {
+	if plan.cacheable && plan.memCache != nil {
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
 		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
 		for _, typeToInvalidate := range plan.invalidate {
