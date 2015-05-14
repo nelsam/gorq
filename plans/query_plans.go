@@ -331,6 +331,7 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 		quotedTableName = plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
 	}
 	for _, col := range table.Columns {
+		shouldSelect := !col.Transient && prefix != "-"
 		if value.Type().FieldByIndex(col.FieldIndex()).PkgPath != "" {
 			// TODO: What about anonymous fields?
 			// Don't map unexported fields
@@ -339,15 +340,13 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 		field := fieldByIndex(value, col.FieldIndex())
 		alias := prefix + col.ColumnName
 		colPrefix := prefix
-		if prefix == "-" {
-			alias = "-"
-		} else if col.JoinAlias() != "" {
+		if col.JoinAlias() != "" {
 			alias = prefix + col.JoinAlias()
 			colPrefix = prefix + col.JoinPrefix()
 		}
 		fieldRef := field.Addr().Interface()
 		quotedCol := plan.dbMap.Dialect.QuoteField(col.ColumnName)
-		if prefix != "-" {
+		if prefix != "-" && prefix != "" {
 			// This means we're mapping an embedded struct, so we can
 			// sort of autodetect some reference columns.
 			if len(col.ReferencedBy()) > 0 {
@@ -357,11 +356,11 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 				fieldMap, err := plan.colMap.fieldMapForPointer(fieldRef)
 				if err == nil {
 					plan.lastRefs = append(plan.lastRefs, reference(fieldMap.quotedTable, fieldMap.quotedColumn, quotedTableName, quotedCol))
-					alias = "-"
+					shouldSelect = false
 				}
 			}
 		}
-		fieldMap := fieldColumnMap{
+		fieldMap := &fieldColumnMap{
 			parent:       parent,
 			field:        fieldRef,
 			selectTarget: fieldRef,
@@ -370,7 +369,12 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 			prefix:       colPrefix,
 			quotedTable:  quotedTableName,
 			quotedColumn: quotedCol,
-			doSelect:     !col.Transient,
+			doSelect:     shouldSelect,
+		}
+		for _, op := range joinOps {
+			if op.Table == table && op.Column == col {
+				fieldMap.join = op.Join
+			}
 		}
 		for _, op := range joinOps {
 			if table == op.Table && col == op.Column {
@@ -436,7 +440,7 @@ func (plan *QueryPlan) Fields(fields ...interface{}) interfaces.SelectionQuery {
 // explicitly joined to using methods like Join or LeftJoin, but added
 // using AddField instead.
 func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectionQuery {
-	m, err := plan.colMap.fieldMapForPointer(fieldPtr)
+	m, err := plan.colMap.joinMapForPointer(fieldPtr)
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		return plan
@@ -444,6 +448,11 @@ func (plan *QueryPlan) AddField(fieldPtr interface{}) interfaces.SelectionQuery 
 	m.doSelect = true
 	if m.join != nil {
 		joinType, joinTarget, joinField, constraints := m.join(m.parent, m.field)
+		if joinTarget == nil {
+			// This means to not bother joining.
+			m.doSelect = false
+			return plan
+		}
 		plan.JoinType(joinType, joinTarget).On(constraints...)
 		m.selectTarget = joinField
 	}
