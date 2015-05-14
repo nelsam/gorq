@@ -51,7 +51,7 @@ type fieldColumnMap struct {
 	join JoinFunc
 }
 
-type structColumnMap []fieldColumnMap
+type structColumnMap []*fieldColumnMap
 
 // LocateColumn takes an interface value (which should be a
 // pointer to one of the fields on the value that is being used as a
@@ -81,7 +81,7 @@ func (structMap structColumnMap) LocateTableAndColumn(fieldPtr interface{}) (str
 func (structMap structColumnMap) joinMapForPointer(fieldPtr interface{}) (*fieldColumnMap, error) {
 	for _, fieldMap := range structMap {
 		if fieldMap.field == fieldPtr {
-			return &fieldMap, nil
+			return fieldMap, nil
 		}
 	}
 	fieldPtrVal := reflect.ValueOf(fieldPtr)
