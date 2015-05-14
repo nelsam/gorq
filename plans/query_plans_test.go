@@ -202,7 +202,7 @@ func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *QueryPlan {
 	suite.Implements((*interfaces.Query)(nil), q)
 	if plan, ok := q.(*QueryPlan); suite.True(ok) {
 		suite.NotEqual(0, len(plan.Errors),
-			"Query(ref,nil,false,nil) should error if ref is not a pointer to a struct")
+			"Query(ref) should error if ref is not a pointer to a struct")
 	}
 
 	q = Query(suite.Map, suite.Map, ptr, nil, false, nil)
@@ -216,33 +216,33 @@ func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *QueryPlan {
 func (suite *QueryPlanTestSuite) TestQueryPlan_EmptyStruct() {
 	q := suite.getQueryPlanFor(EmptyStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref,nil,false,nil) should generate errors if ref is an empty struct")
+		"Query(ref) should generate errors if ref is an empty struct")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_InvalidStruct() {
 	q := suite.getQueryPlanFor(InvalidStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref,nil,false,nil) should generate errors if ref has no exported fields")
+		"Query(ref) should generate errors if ref has no exported fields")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_OnlyTransient() {
 	q := suite.getQueryPlanFor(OnlyTransientFields{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref,nil,false,nil) should generate errors if ref has only transient fields")
+		"Query(ref) should generate errors if ref has only transient fields")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_NonStruct() {
 	for _, val := range []interface{}{"Test", 1, 1.0} {
 		q := suite.getQueryPlanFor(val)
 		suite.NotEqual(0, len(q.Errors),
-			"Query(ref,nil,false,nil) should generate errors if ref is a non-struct type")
+			"Query(ref) should generate errors if ref is a non-struct type")
 	}
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_UnmappedStruct() {
 	q := suite.getQueryPlanFor(UnmappedStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref,nil,false,nil) should generate errors if ref has not yet been mapped")
+		"Query(ref) should generate errors if ref has not yet been mapped")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_NonFieldPtr() {

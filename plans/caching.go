@@ -12,9 +12,6 @@ import (
 
 const defaultCacheExpirationTime = 0 // never expire
 
-// TODO: use custom map encoder instead of json.Marshal
-// Use column names to generate the map
-
 func prepareForCache(data interface{}) (string, error) {
 	var b bytes.Buffer
 	w := gzip.NewWriter(&b)
