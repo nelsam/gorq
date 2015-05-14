@@ -77,7 +77,7 @@ func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) er
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	return plans.Query(gorpMap, gorpMap, target)
+	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
