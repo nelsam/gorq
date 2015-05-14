@@ -13,7 +13,7 @@ import (
 	"github.com/outdoorsy/gorp"
 )
 
-const defaultCacheExpirationTime = 0 // never expire
+const defaultCacheExpirationTime = 604800 // one week
 
 func prepareForCache(data interface{}, colMap structColumnMap) (string, error) {
 	var b bytes.Buffer
