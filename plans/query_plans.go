@@ -6,12 +6,25 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
+	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/dialects"
 	"github.com/outdoorsy/gorq/filters"
 	"github.com/outdoorsy/gorq/interfaces"
 )
+
+var (
+	tableCacheMap  = map[string][]string{}
+	tableCacheLock sync.RWMutex
+)
+
+func addTableCacheMapEntry(tableKey, cacheKey string) {
+	tableCacheLock.Lock()
+	tableCacheMap[tableKey] = append(tableCacheMap[tableKey], cacheKey)
+	tableCacheLock.Unlock()
+}
 
 type fieldColumnMap struct {
 	// addr should be the address (pointer value) of the field within
@@ -210,12 +223,15 @@ type QueryPlan struct {
 	limit          int64
 	offset         int64
 	args           []interface{}
+	memCache       *mc.Conn
+	cacheable      bool
+	invalidate     []interface{}
 }
 
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache *mc.Conn, cacheable bool, invalidate []interface{}) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -225,8 +241,11 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}) interfaces.
 	default:
 	}
 	plan := &QueryPlan{
-		dbMap:    m,
-		executor: exec,
+		dbMap:      m,
+		executor:   exec,
+		memCache:   cache,
+		cacheable:  cacheable,
+		invalidate: invalidate,
 	}
 
 	targetVal := reflect.ValueOf(target)
@@ -708,11 +727,32 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	if plan.cacheable {
+		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		data, err := getCacheData(cacheKey, plan.memCache)
+		if err == nil { // fail silently - graceful fallback
+			return data, nil
+		}
+	}
+
 	target := plan.target.Interface()
 	if subQuery, ok := target.(subQuery); ok {
 		target = subQuery.getTarget().Interface()
 	}
-	return plan.executor.Select(target, query, plan.args...)
+	res, err := plan.executor.Select(target, query, plan.args...)
+
+	if plan.cacheable {
+		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+		addTableCacheMapEntry(tableKey, cacheKey)
+		for _, join := range plan.joins {
+			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
+		}
+		if err == nil {
+			setCacheData(cacheKey, res, plan.memCache) // fail silently - graceful fallback
+		}
+	}
+	return res, err
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -726,7 +766,36 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	if plan.cacheable {
+		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		data, err := getCacheData(cacheKey, plan.memCache)
+		if err == nil { // fail silently - graceful fallback
+			targetVal := reflect.ValueOf(target)
+			for _, item := range data {
+				empty := reflect.New(targetVal.Type().Elem().Elem())
+				from := reflect.ValueOf(item)
+				for _, key := range from.MapKeys() {
+					field := empty.FieldByIndex(plan.table.ColMap(key).FieldIndex())
+					field.Set(from.MapIndex(key))
+				}
+			}
+			return nil
+		}
+	}
+
 	_, err = plan.executor.Select(target, query, plan.args...)
+	if plan.cacheable {
+		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
+		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+		addTableCacheMapEntry(tableKey, cacheKey)
+		for _, join := range plan.joins {
+			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
+		}
+		if err == nil {
+			setCacheData(cacheKey, target, plan.memCache) // fail silently - graceful fallback
+		}
+	}
 	return err
 }
 

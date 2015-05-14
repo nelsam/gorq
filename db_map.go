@@ -1,6 +1,7 @@
 package gorq
 
 import (
+	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/interfaces"
 	"github.com/outdoorsy/gorq/plans"
@@ -16,10 +17,29 @@ type SqlExecutor interface {
 	Query(target interface{}) interfaces.Query
 }
 
+// Invalidator is a type that allows for creating a relationship
+// between two objects such that the first will be invalidated
+// in cache if any of the others change
+type Invalidator struct {
+	dbMap    *DbMap
+	original interface{}
+}
+
+// InvalidateOnChange associates the object from the previous call with
+// the provided targets, invalidating the first if any of the others change.
+func (i *Invalidator) InvalidateOnChange(targets ...interface{}) {
+	for _, target := range targets {
+		i.dbMap.invalidate[target] = append(i.dbMap.invalidate[target], i.original)
+	}
+}
+
 // DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
 // methods to it.
 type DbMap struct {
 	gorp.DbMap
+	MemCache   *mc.Conn
+	cacheable  map[interface{}]bool
+	invalidate map[interface{}][]interface{}
 }
 
 // Query returns a Query type, which can be used to generate and run
@@ -57,7 +77,14 @@ type DbMap struct {
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	return plans.Query(gorpMap, gorpMap, target)
+	return plans.Query(
+		gorpMap,
+		gorpMap,
+		target,
+		m.MemCache,
+		m.cacheable[target],
+		m.invalidate[target],
+	)
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
@@ -80,5 +107,21 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target)
+	return plans.Query(
+		&t.dbmap.DbMap,
+		&t.Transaction,
+		target,
+		t.dbmap.MemCache,
+		t.dbmap.cacheable[target],
+		t.dbmap.invalidate[target],
+	)
+}
+
+// SetCacheable instructs gorq to cache the result of a query for this type in memcache
+func (m *DbMap) SetCacheable(target interface{}, cacheable bool) Invalidator {
+	m.cacheable[target] = cacheable
+	return Invalidator{
+		original: target,
+		dbMap:    m,
+	}
 }
