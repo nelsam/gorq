@@ -1,6 +1,9 @@
 package gorq
 
 import (
+	"fmt"
+	"reflect"
+
 	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/interfaces"
@@ -28,9 +31,20 @@ type Invalidator struct {
 // InvalidateOnChange associates the object from the previous call with
 // the provided targets, invalidating the first if any of the others change.
 func (i *Invalidator) InvalidateOnChange(targets ...interface{}) {
-	for _, target := range targets {
-		i.dbMap.invalidate[target] = append(i.dbMap.invalidate[target], i.original)
+	if i.dbMap.invalidate == nil {
+		i.dbMap.invalidate = map[string][]interface{}{}
 	}
+	for _, target := range targets {
+		i.dbMap.invalidate[fullTypePath(target)] = append(i.dbMap.invalidate[fullTypePath(target)], i.original)
+	}
+}
+
+func fullTypePath(object interface{}) string {
+	t := reflect.TypeOf(object)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.PkgPath() + "." + t.Name()
 }
 
 // DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
@@ -38,8 +52,8 @@ func (i *Invalidator) InvalidateOnChange(targets ...interface{}) {
 type DbMap struct {
 	gorp.DbMap
 	MemCache   *mc.Conn
-	cacheable  map[interface{}]bool
-	invalidate map[interface{}][]interface{}
+	cacheable  map[string]bool
+	invalidate map[string][]interface{}
 }
 
 // Query returns a Query type, which can be used to generate and run
@@ -77,13 +91,14 @@ type DbMap struct {
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
+	fmt.Println("new query for ", fullTypePath(target), m.cacheable[fullTypePath(target)])
 	return plans.Query(
 		gorpMap,
 		gorpMap,
 		target,
 		m.MemCache,
-		m.cacheable[target],
-		m.invalidate[target],
+		m.cacheable[fullTypePath(target)],
+		m.invalidate[fullTypePath(target)],
 	)
 }
 
@@ -112,15 +127,19 @@ func (t *Transaction) Query(target interface{}) interfaces.Query {
 		&t.Transaction,
 		target,
 		t.dbmap.MemCache,
-		t.dbmap.cacheable[target],
-		t.dbmap.invalidate[target],
+		t.dbmap.cacheable[fullTypePath(target)],
+		t.dbmap.invalidate[fullTypePath(target)],
 	)
 }
 
 // SetCacheable instructs gorq to cache the result of a query for this type in memcache
-func (m *DbMap) SetCacheable(target interface{}, cacheable bool) Invalidator {
-	m.cacheable[target] = cacheable
-	return Invalidator{
+func (m *DbMap) SetCacheable(target interface{}, cacheable bool) *Invalidator {
+	if m.cacheable == nil {
+		m.cacheable = map[string]bool{}
+	}
+	fmt.Println("adding cacheable:", fullTypePath(target), cacheable)
+	m.cacheable[fullTypePath(target)] = cacheable
+	return &Invalidator{
 		original: target,
 		dbMap:    m,
 	}

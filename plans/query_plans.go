@@ -773,9 +773,9 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		for _, join := range plan.joins {
 			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
 		}
-		if err == nil {
-			setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
-		}
+		setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
+	} else {
+		fmt.Println("didn't run in select", plan.cacheable, plan.target.Type().Name())
 	}
 
 	return res, nil
@@ -814,6 +814,9 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	}
 
 	_, err = plan.executor.Select(target, query, plan.args...)
+	if err != nil {
+		return err
+	}
 	if plan.cacheable && plan.memCache != nil {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
 		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
@@ -821,9 +824,9 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		for _, join := range plan.joins {
 			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
 		}
-		if err == nil {
-			setCacheData(cacheKey, target, plan.colMap, plan.memCache) // fail silently - graceful fallback
-		}
+		setCacheData(cacheKey, target, plan.colMap, plan.memCache) // fail silently - graceful fallback
+	} else {
+		fmt.Println("didn't run in select to target", plan.cacheable, plan.target.Type().Name())
 	}
 	return err
 }

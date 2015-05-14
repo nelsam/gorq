@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -69,6 +70,7 @@ func restoreFromCache(encoded string, target reflect.Value, table *gorp.TableMap
 }
 
 func setCacheData(cacheKey string, data interface{}, colMap structColumnMap, cache *mc.Conn) error {
+	fmt.Println("SET CACHE - ", cacheKey)
 	encoded, err := prepareForCache(data, colMap)
 	if err != nil {
 		return err
@@ -78,6 +80,7 @@ func setCacheData(cacheKey string, data interface{}, colMap structColumnMap, cac
 }
 
 func getCacheData(cacheKey string, target reflect.Value, table *gorp.TableMap, cache *mc.Conn) ([]interface{}, error) {
+	fmt.Println("READ CACHE - ", cacheKey)
 	s, _, _, err := cache.Get(cacheKey)
 	if err != nil {
 		return nil, err
@@ -87,6 +90,7 @@ func getCacheData(cacheKey string, target reflect.Value, table *gorp.TableMap, c
 
 func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
 	for _, key := range cacheKeys {
+		fmt.Println("DEL CACHE", key)
 		err := cache.Del(key)
 		if err != nil {
 			return err
@@ -121,7 +125,7 @@ func encodeForMemcache(data interface{}, colMap structColumnMap) interface{} {
 				continue
 			}
 			index := m.column.FieldIndex()
-			res[key] = val.FieldByIndex(index)
+			res[key] = fieldByIndex(val, index)
 		}
 		return res
 	case reflect.Map:
@@ -147,7 +151,7 @@ func decodeFromMemcache(from interface{}, to reflect.Value, table *gorp.TableMap
 			if col == nil {
 				// return an error, probably, since the target type does not have a field to apply this value to
 			}
-			to.FieldByIndex(col.FieldIndex()).Set(reflect.ValueOf(v))
+			fieldByIndex(to, col.FieldIndex()).Set(reflect.ValueOf(v))
 		}
 		return to.Interface()
 	default:
