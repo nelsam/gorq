@@ -25,6 +25,13 @@ func addTableCacheMapEntry(tableKey, cacheKey string) {
 	tableCacheMap[tableKey] = append(tableCacheMap[tableKey], cacheKey)
 	tableCacheLock.Unlock()
 }
+func getTableCacheMapEntry(tableKey string) []string {
+	var entries []string
+	tableCacheLock.RLock()
+	entries = tableCacheMap[tableKey]
+	tableCacheLock.RUnlock()
+	return entries
+}
 
 type fieldColumnMap struct {
 	// addr should be the address (pointer value) of the field within
@@ -940,6 +947,12 @@ func (plan *QueryPlan) Insert() error {
 	}
 	buffer.WriteString(")")
 	_, err := plan.executor.Exec(buffer.String(), plan.args...)
+
+	if plan.cacheable {
+		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
+	}
+
 	return err
 }
 
@@ -1008,6 +1021,12 @@ func (plan *QueryPlan) Update() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+
+	if plan.cacheable {
+		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
+	}
+
 	return rows, nil
 }
 
@@ -1049,6 +1068,12 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+
+	if plan.cacheable {
+		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
+		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
+	}
+
 	return rows, nil
 }
 

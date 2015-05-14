@@ -75,6 +75,16 @@ func getCacheData(cacheKey string, targetType reflect.Value, cache *mc.Conn) ([]
 	return restoreFromCache(s, targetType)
 }
 
+func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
+	for _, key := range cacheKeys {
+		err := cache.Del(key)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func convertToMemcacheVal(data interface{}) interface{} {
 	val := reflect.ValueOf(data)
 	if val.Kind() == reflect.Ptr {
