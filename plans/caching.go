@@ -32,14 +32,15 @@ func prepareForCache(data interface{}) (string, error) {
 	return string(b.Bytes()), nil
 }
 
-func restoreFromCache(encoded string) ([]interface{}, error) {
+func restoreFromCache(encoded string, targetType reflect.Value) ([]interface{}, error) {
 	r, err := gzip.NewReader(strings.NewReader(encoded))
 	if err != nil {
 		r.Close()
 		return nil, err
 	}
-	var data []interface{}
-	err = json.NewDecoder(r).Decode(&data)
+
+	typed := reflect.Zero(reflect.SliceOf(targetType.Type())).Interface()
+	err = json.NewDecoder(r).Decode(&typed)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +48,13 @@ func restoreFromCache(encoded string) ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	tv := reflect.ValueOf(typed)
+	data := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf([]interface{}{})), tv.Len(), tv.Cap()).Interface().([]interface{})
+	for i := range data {
+		data[i] = tv.Index(i).Interface()
+	}
+
 	return data, nil
 }
 
@@ -59,12 +67,12 @@ func setCacheData(cacheKey string, data interface{}, cache *mc.Conn) error {
 	return err
 }
 
-func getCacheData(cacheKey string, cache *mc.Conn) ([]interface{}, error) {
+func getCacheData(cacheKey string, targetType reflect.Value, cache *mc.Conn) ([]interface{}, error) {
 	s, _, _, err := cache.Get(cacheKey)
 	if err != nil {
 		return nil, err
 	}
-	return restoreFromCache(s)
+	return restoreFromCache(s, targetType)
 }
 
 func convertToMemcacheVal(data interface{}) interface{} {

@@ -729,7 +729,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 	if plan.cacheable {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
-		data, err := getCacheData(cacheKey, plan.memCache)
+		data, err := getCacheData(cacheKey, plan.target, plan.memCache)
 		if err == nil { // fail silently - graceful fallback
 			return data, nil
 		}
@@ -740,6 +740,9 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		target = subQuery.getTarget().Interface()
 	}
 	res, err := plan.executor.Select(target, query, plan.args...)
+	if err != nil {
+		return nil, err
+	}
 
 	if plan.cacheable {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
@@ -752,7 +755,8 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 			setCacheData(cacheKey, res, plan.memCache) // fail silently - graceful fallback
 		}
 	}
-	return res, err
+
+	return res, nil
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -769,7 +773,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 
 	if plan.cacheable {
 		cacheKey := fmt.Sprintf("%s: %v", query, plan.args)
-		data, err := getCacheData(cacheKey, plan.memCache)
+		data, err := getCacheData(cacheKey, reflect.ValueOf(map[string]interface{}{}), plan.memCache)
 		if err == nil { // fail silently - graceful fallback
 			targetVal := reflect.ValueOf(target)
 			for _, item := range data {
