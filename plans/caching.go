@@ -53,9 +53,9 @@ func restoreFromCache(encoded string, target reflect.Value, table *gorp.TableMap
 
 	var elem reflect.Value
 	if target.Kind() == reflect.Ptr {
-		elem = reflect.Zero(target.Type())
-	} else {
 		elem = reflect.New(target.Type().Elem())
+	} else {
+		elem = reflect.Zero(target.Type())
 	}
 	data = decodeFromMemcache(data, elem, table)
 
