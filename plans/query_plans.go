@@ -786,7 +786,14 @@ func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err erro
 		return src.WrapSql(wrapperVals...), nil
 	default:
 		if reflect.TypeOf(value).Kind() == reflect.Ptr {
-			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
+			m, err := plan.colMap.fieldMapForPointer(value)
+			if err != nil {
+				return "", err
+			}
+			if m.selectTarget != m.field {
+				return plan.argOrColumn(m.selectTarget)
+			}
+			sqlValue = m.quotedTable + "." + m.quotedColumn
 		} else {
 			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
 			plan.args = append(plan.args, value)
