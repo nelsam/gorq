@@ -774,7 +774,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
 		}
 		if err == nil {
-			setCacheData(cacheKey, res, plan.memCache) // fail silently - graceful fallback
+			setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
 		}
 	}
 
@@ -822,7 +822,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
 		}
 		if err == nil {
-			setCacheData(cacheKey, target, plan.memCache) // fail silently - graceful fallback
+			setCacheData(cacheKey, target, plan.colMap, plan.memCache) // fail silently - graceful fallback
 		}
 	}
 	return err

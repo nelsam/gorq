@@ -14,10 +14,10 @@ import (
 
 const defaultCacheExpirationTime = 0 // never expire
 
-func prepareForCache(data interface{}) (string, error) {
+func prepareForCache(data interface{}, colMap structColumnMap) (string, error) {
 	var b bytes.Buffer
 	w := gzip.NewWriter(&b)
-	err := json.NewEncoder(w).Encode(encodeForMemcache(data))
+	err := json.NewEncoder(w).Encode(encodeForMemcache(data, colMap))
 	if err != nil {
 		w.Close()
 		return "", err
@@ -68,8 +68,8 @@ func restoreFromCache(encoded string, target reflect.Value, table *gorp.TableMap
 	return nil, errors.New("return type may only be []interface{}. it was: " + reflect.TypeOf(data).Name())
 }
 
-func setCacheData(cacheKey string, data interface{}, cache *mc.Conn) error {
-	encoded, err := prepareForCache(data)
+func setCacheData(cacheKey string, data interface{}, colMap structColumnMap, cache *mc.Conn) error {
+	encoded, err := prepareForCache(data, colMap)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func evictCacheData(cacheKeys []string, cache *mc.Conn) error {
 	return nil
 }
 
-func encodeForMemcache(data interface{}) interface{} {
+func encodeForMemcache(data interface{}, colMap structColumnMap) interface{} {
 	val := reflect.ValueOf(data)
 	if val.Kind() == reflect.Ptr {
 		if val.IsNil() {
@@ -110,26 +110,25 @@ func encodeForMemcache(data interface{}) interface{} {
 		res := make([]interface{}, 0, val.Len())
 		for i := 0; i < val.Len(); i++ {
 			elem := val.Index(i)
-			res = append(res, encodeForMemcache(elem.Interface()))
+			res = append(res, encodeForMemcache(elem.Interface(), colMap))
 		}
 		return res
 	case reflect.Struct:
 		res := make(map[string]interface{})
-		for i := 0; i < val.NumField(); i++ {
-			field := val.Field(i)
-			fieldInfo := val.Type().Field(i)
-			name := fieldInfo.Tag.Get("db")
-			if idx := strings.IndexRune(name, ','); idx >= 0 {
-				name = name[:idx]
+		for _, m := range colMap {
+			key := m.alias
+			if key == "-" {
+				continue
 			}
-			res[name] = encodeForMemcache(field.Interface())
+			index := m.column.FieldIndex()
+			res[key] = val.FieldByIndex(index)
 		}
 		return res
 	case reflect.Map:
 		res := make(map[string]interface{})
 		keys := val.MapKeys()
 		for _, key := range keys {
-			res[key.String()] = encodeForMemcache(val.MapIndex(key))
+			res[key.String()] = encodeForMemcache(val.MapIndex(key), colMap)
 		}
 	}
 	return data
