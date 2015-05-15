@@ -7,25 +7,39 @@ import (
 	"github.com/outdoorsy/gorq/plans"
 )
 
+// PostgresAssigner is equivalent to interfaces.Assigner, but allows
+// postgres-specific join-like operations during update queries.
 type PostgresAssigner interface {
 	Assign(fieldPtr interface{}, value interface{}) PostgresAssignQuery
 }
 
+// PostgresJoiner includes methods equivalent to interfaces.Joiner,
+// except for the functions' return types, as well as some slightly
+// different join types.
 type PostgresJoiner interface {
 	Join(table interface{}) PostgresJoinQuery
+	LeftJoin(table interface{}) PostgresJoinQuery
 }
 
+// PostgresAssignJoiner is equivalent to interfaces.Joiner, except for
+// the functions' return types.
 type PostgresAssignJoiner interface {
 	Join(table interface{}) PostgresAssignJoinQuery
 }
 
 // PostgresJoinQuery is an interfaces.JoinQuery, but with support for
-// delete statements.  See interfaces.JoinQuery for documentation.
+// delete statements.  See interfaces.JoinQuery for main
+// documentation.  It also allows some slightly different joins,
+// documented in PostgresJoiner.
 type PostgresJoinQuery interface {
 	PostgresJoiner
 
 	On(...filters.Filter) PostgresJoinQuery
 
+	References() PostgresJoinQuery
+
+	In(fieldPtr interface{}, values ...interface{}) PostgresJoinQuery
+	Like(fieldPtr interface{}, pattern string) PostgresJoinQuery
 	Equal(fieldPtr interface{}, value interface{}) PostgresJoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) PostgresJoinQuery
 	Less(fieldPtr interface{}, value interface{}) PostgresJoinQuery
@@ -34,6 +48,8 @@ type PostgresJoinQuery interface {
 	GreaterOrEqual(fieldPtr interface{}, value interface{}) PostgresJoinQuery
 	NotNull(fieldPtr interface{}) PostgresJoinQuery
 	Null(fieldPtr interface{}) PostgresJoinQuery
+	True(fieldPtr interface{}) PostgresJoinQuery
+	False(fieldPtr interface{}) PostgresJoinQuery
 
 	// In postgres, a query joined to other tables can still be a
 	// delete statement.
@@ -60,6 +76,10 @@ type PostgresAssignJoinQuery interface {
 
 	On(...filters.Filter) PostgresAssignJoinQuery
 
+	References() PostgresAssignJoinQuery
+
+	In(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery
+	Like(fieldPtr interface{}, pattern string) PostgresAssignJoinQuery
 	Equal(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
 	Less(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
@@ -68,6 +88,8 @@ type PostgresAssignJoinQuery interface {
 	GreaterOrEqual(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
 	NotNull(fieldPtr interface{}) PostgresAssignJoinQuery
 	Null(fieldPtr interface{}) PostgresAssignJoinQuery
+	True(fieldPtr interface{}) PostgresAssignJoinQuery
+	False(fieldPtr interface{}) PostgresAssignJoinQuery
 
 	// Postgres doesn't support joining tables in an insert statement.
 	interfaces.AssignWherer
@@ -79,8 +101,6 @@ type PostgresAssignJoinQuery interface {
 // and UPDATE queries, using "DELETE FROM ... USING ..." and "UPDATE
 // ... FROM ..."
 type Postgres interface {
-	// A PostgresqlExtendedQuery can perform join operations during
-	// DELETE and UPDATE queries.
 	PostgresAssigner
 	PostgresJoiner
 	interfaces.Wherer
@@ -109,13 +129,33 @@ func (plan *PostgresExtendedQueryPlan) Join(table interface{}) PostgresJoinQuery
 	return &PostgresExtendedJoinQueryPlan{plan}
 }
 
-func (plan *PostgresExtendedQueryPlan) On(filters ...filters.Filter) PostgresJoinQuery {
-	plan.QueryPlan.On(filters...)
+func (plan *PostgresExtendedQueryPlan) LeftJoin(table interface{}) PostgresJoinQuery {
+	plan.QueryPlan.LeftJoin(table)
 	return &PostgresExtendedJoinQueryPlan{plan}
 }
 
 type PostgresExtendedJoinQueryPlan struct {
 	*PostgresExtendedQueryPlan
+}
+
+func (plan *PostgresExtendedJoinQueryPlan) On(filters ...filters.Filter) PostgresJoinQuery {
+	plan.QueryPlan.On(filters...)
+	return plan
+}
+
+func (plan *PostgresExtendedJoinQueryPlan) References() PostgresJoinQuery {
+	plan.QueryPlan.References()
+	return plan
+}
+
+func (plan *PostgresExtendedJoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) PostgresJoinQuery {
+	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *PostgresExtendedJoinQueryPlan) Like(fieldPtr interface{}, pattern string) PostgresJoinQuery {
+	plan.QueryPlan.Like(fieldPtr, pattern)
+	return plan
 }
 
 func (plan *PostgresExtendedJoinQueryPlan) Equal(fieldPtr interface{}, value interface{}) PostgresJoinQuery {
@@ -158,6 +198,16 @@ func (plan *PostgresExtendedJoinQueryPlan) NotNull(fieldPtr interface{}) Postgre
 	return plan
 }
 
+func (plan *PostgresExtendedJoinQueryPlan) True(fieldPtr interface{}) PostgresJoinQuery {
+	plan.QueryPlan.True(fieldPtr)
+	return plan
+}
+
+func (plan *PostgresExtendedJoinQueryPlan) False(fieldPtr interface{}) PostgresJoinQuery {
+	plan.QueryPlan.False(fieldPtr)
+	return plan
+}
+
 type PostgresExtendedAssignQueryPlan struct {
 	*plans.AssignQueryPlan
 }
@@ -178,6 +228,21 @@ type PostgresExtendedAssignJoinQueryPlan struct {
 
 func (plan *PostgresExtendedAssignJoinQueryPlan) On(filters ...filters.Filter) PostgresAssignJoinQuery {
 	plan.QueryPlan.On(filters...)
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) References() PostgresAssignJoinQuery {
+	plan.QueryPlan.References()
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery {
+	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) Like(fieldPtr interface{}, pattern string) PostgresAssignJoinQuery {
+	plan.QueryPlan.Like(fieldPtr, pattern)
 	return plan
 }
 
@@ -218,6 +283,16 @@ func (plan *PostgresExtendedAssignJoinQueryPlan) Null(fieldPtr interface{}) Post
 
 func (plan *PostgresExtendedAssignJoinQueryPlan) NotNull(fieldPtr interface{}) PostgresAssignJoinQuery {
 	plan.QueryPlan.NotNull(fieldPtr)
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) True(fieldPtr interface{}) PostgresAssignJoinQuery {
+	plan.QueryPlan.True(fieldPtr)
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) False(fieldPtr interface{}) PostgresAssignJoinQuery {
+	plan.QueryPlan.False(fieldPtr)
 	return plan
 }
 

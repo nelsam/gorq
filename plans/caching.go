@@ -10,10 +10,39 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
 )
+
+var (
+	tableCacheMap  = map[string]map[string]struct{}{}
+	tableCacheLock sync.RWMutex
+)
+
+func addTableCacheMapEntry(tableKey, cacheKey string) {
+	tableCacheLock.Lock()
+	if tableCacheMap[tableKey] == nil {
+		tableCacheMap[tableKey] = map[string]struct{}{cacheKey: {}}
+	} else {
+		tableCacheMap[tableKey][cacheKey] = struct{}{}
+	}
+	tableCacheLock.Unlock()
+}
+func getTableCacheMapEntry(tableKey string) []string {
+	var cacheKeys map[string]struct{}
+	tableCacheLock.RLock()
+	cacheKeys = tableCacheMap[tableKey]
+	tableCacheLock.RUnlock()
+
+	entries := make([]string, 0, len(cacheKeys))
+	for k := range cacheKeys {
+		entries = append(entries, k)
+	}
+
+	return entries
+}
 
 const defaultCacheExpirationTime = 604800 // one week
 

@@ -1,6 +1,7 @@
 package gorq
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -54,6 +55,23 @@ type DbMap struct {
 	MemCache   *mc.Conn
 	cacheable  map[string]bool
 	invalidate map[string][]interface{}
+	joinOps    []plans.JoinOp
+}
+
+func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) error {
+	var (
+		err   error
+		newOp = plans.JoinOp{}
+	)
+	if newOp.Table, err = m.TableFor(reflect.TypeOf(target), false); err != nil {
+		return err
+	}
+	if newOp.Column = newOp.Table.ColMap(fieldPtrOrName); newOp.Column == nil {
+		return errors.New("No column found for the passed in field name or pointer")
+	}
+	newOp.Join = op
+	m.joinOps = append(m.joinOps, newOp)
+	return nil
 }
 
 // Query returns a Query type, which can be used to generate and run
@@ -91,7 +109,6 @@ type DbMap struct {
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	fmt.Println("new query for ", fullTypePath(target), m.cacheable[fullTypePath(target)])
 	return plans.Query(
 		gorpMap,
 		gorpMap,
@@ -99,6 +116,7 @@ func (m *DbMap) Query(target interface{}) interfaces.Query {
 		m.MemCache,
 		m.cacheable[fullTypePath(target)],
 		m.invalidate[fullTypePath(target)],
+		m.joinOps...,
 	)
 }
 
@@ -129,6 +147,7 @@ func (t *Transaction) Query(target interface{}) interfaces.Query {
 		t.dbmap.MemCache,
 		t.dbmap.cacheable[fullTypePath(target)],
 		t.dbmap.invalidate[fullTypePath(target)],
+		t.dbmap.joinOps...,
 	)
 }
 

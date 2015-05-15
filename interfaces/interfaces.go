@@ -102,6 +102,17 @@ type Assigner interface {
 	Assign(fieldPtr interface{}, value interface{}) AssignQuery
 }
 
+// FieldLimiter can limit the number of fields included in a select
+// statement.
+type FieldLimiter interface {
+	Fields(fields ...interface{}) SelectionQuery
+}
+
+// FieldAdder can add more fields to the selection statement.
+type FieldAdder interface {
+	AddField(field interface{}) SelectionQuery
+}
+
 // A Joiner is a query that can add tables as join clauses.
 type Joiner interface {
 	// Join adds a table to the query using INNER JOIN.  The
@@ -129,6 +140,18 @@ type Wherer interface {
 type AssignWherer interface {
 	// Where is the same as Wherer.Where(), save for the return type.
 	Where(...filters.Filter) UpdateQuery
+}
+
+// A SelectionQuery is a query earlier in the query creation process
+// than SelectQuery, but is still definitely a SELECT statement.
+type SelectionQuery interface {
+	// Fields may still be added in a SelectionQuery, but not limited
+	// - that must be the first method call on a query, if it is to be
+	// called.
+	FieldAdder
+	Joiner
+	SelectManipulator
+	Selector
 }
 
 // A SelectQuery is a query that can only execute SELECT statements.
@@ -330,8 +353,10 @@ type Query interface {
 	// use a registered extension query type.
 	Extend() interface{}
 
-	// A query that has had no methods called can both perform
-	// assignments and still have a where clause.
+	// A query that has had no methods called could still end up
+	// either a selection or assignment query.
+	FieldLimiter
+	FieldAdder
 	Assigner
 	Joiner
 	Wherer

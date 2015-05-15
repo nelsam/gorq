@@ -2,35 +2,8 @@ package filters
 
 import (
 	"bytes"
-	"errors"
-	"reflect"
-
-	"github.com/outdoorsy/gorp"
+	"strings"
 )
-
-type SqlWrapper interface {
-	// ActualValue should return the value to be used as a value or
-	// column in the SQL query.
-	ActualValue() interface{}
-
-	// WrapSql should take the generated string that is being used to
-	// represent the ActualValue() in the query, and wrap it in
-	// whatever SQL this SqlWrapper needs to add to the query.
-	WrapSql(string) string
-}
-
-// TODO: Add support for this in filters.  Currently used only for
-// OrderBy.
-type MultiSqlWrapper interface {
-	// ActualValue should return the value to be used as a value or
-	// column in the SQL query.
-	ActualValues() []interface{}
-
-	// WrapSql should take the generated string that is being used to
-	// represent the ActualValue() in the query, and wrap it in
-	// whatever SQL this SqlWrapper needs to add to the query.
-	WrapSql(...string) string
-}
 
 // A TableAndColumnLocater takes a struct field reference and returns
 // the column for that field, complete with table name.
@@ -40,14 +13,16 @@ type TableAndColumnLocater interface {
 	LocateTableAndColumn(fieldPtr interface{}) (string, error)
 }
 
-// A Filter is a type that can be used as a sub-section of a where
-// clause.
+// A Filter is a type of MultiSqlWrapper, but is used explicitly in
+// where clauses.  As such, its equivalent of WrapSql is named Where.
 type Filter interface {
-	// Where should take a TableAndColumnLocater, a dialect, and the index
-	// to start binding at, and return the string to be added to the
-	// where clause, a slice of query arguments in the where clause,
-	// and any errors encountered.
-	Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error)
+	// ActualValues returns a slice of all arguments in this filter.
+	ActualValues() []interface{}
+
+	// Where takes the string values that should be wrapped in the
+	// query string, and returns the query string to use for this
+	// filter.
+	Where(...string) string
 }
 
 // A MultiFilter is a filter that can also accept additional filters.
@@ -62,29 +37,32 @@ type CombinedFilter struct {
 	subFilters []Filter
 }
 
-// joinFilters joins all of the sub-filters' where clauses into a
-// single where clause.
-func (filter *CombinedFilter) joinFilters(separator string, structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	buffer := bytes.Buffer{}
-	args := make([]interface{}, 0, len(filter.subFilters))
-	if len(filter.subFilters) > 1 {
-		buffer.WriteString("(")
+func (filter *CombinedFilter) ActualValues() []interface{} {
+	values := make([]interface{}, 0, len(filter.subFilters))
+	for _, f := range filter.subFilters {
+		values = append(values, f.ActualValues()...)
 	}
-	for index, subFilter := range filter.subFilters {
-		nextWhere, nextArgs, err := subFilter.Where(structMap, dialect, startBindIdx+len(args))
-		if err != nil {
-			return "", nil, err
-		}
-		args = append(args, nextArgs...)
+	return values
+}
+
+func (filter *CombinedFilter) where(separator string, values ...string) string {
+	buf := bytes.Buffer{}
+	if len(filter.subFilters) > 1 {
+		buf.WriteString("(")
+	}
+	index := 0
+	for _, subFilter := range filter.subFilters {
 		if index != 0 {
-			buffer.WriteString(separator)
+			buf.WriteString(separator)
 		}
-		buffer.WriteString(nextWhere)
+		end := index + len(subFilter.ActualValues())
+		buf.WriteString(subFilter.Where(values[index:end]...))
+		index = end
 	}
 	if len(filter.subFilters) > 1 {
-		buffer.WriteString(")")
+		buf.WriteString(")")
 	}
-	return buffer.String(), args, nil
+	return buf.String()
 }
 
 // Add adds one or more filters to the slice of sub-filters.
@@ -98,8 +76,8 @@ type AndFilter struct {
 	CombinedFilter
 }
 
-func (filter *AndFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	return filter.joinFilters(" and ", structMap, dialect, startBindIdx)
+func (filter *AndFilter) Where(values ...string) string {
+	return filter.where(" and ", values...)
 }
 
 // An OrFilter is a CombinedFilter that will have its sub-filters
@@ -108,8 +86,8 @@ type OrFilter struct {
 	CombinedFilter
 }
 
-func (filter *OrFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	return filter.joinFilters(" or ", structMap, dialect, startBindIdx)
+func (filter *OrFilter) Where(values ...string) string {
+	return filter.where(" or ", values...)
 }
 
 // An InFilter is a filter for value IN (list_of_values).
@@ -121,45 +99,17 @@ type InFilter struct {
 	valueList  []interface{}
 }
 
-// TODO: Add interface for sub-selects.
-func (filter *InFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	if len(filter.valueList) == 0 {
-		return "", nil, errors.New("Cannot create IN filter clause for empty list")
+func (filter *InFilter) ActualValues() []interface{} {
+	values := make([]interface{}, 0, len(filter.valueList)+1)
+	values = append(values, filter.expression)
+	for _, v := range filter.valueList {
+		values = append(values, v)
 	}
-	query := bytes.Buffer{}
-	args := make([]interface{}, 0, len(filter.valueList)+1)
-	var (
-		sqlValue string
-		err      error
-	)
-	if reflect.ValueOf(filter.expression).Kind() == reflect.Ptr {
-		sqlValue, err = structMap.LocateTableAndColumn(filter.expression)
-		if err != nil {
-			return "", nil, err
-		}
-	} else {
-		sqlValue = dialect.BindVar(startBindIdx)
-		args = append(args, filter.expression)
-	}
-	query.WriteString(sqlValue)
-	query.WriteString(" IN (")
-	for idx, target := range filter.valueList {
-		if idx > 0 {
-			query.WriteString(",")
-		}
-		if reflect.ValueOf(target).Kind() == reflect.Ptr {
-			sqlValue, err = structMap.LocateTableAndColumn(target)
-			if err != nil {
-				return "", nil, err
-			}
-		} else {
-			sqlValue = dialect.BindVar(startBindIdx + len(args))
-			args = append(args, target)
-		}
-		query.WriteString(sqlValue)
-	}
-	query.WriteString(")")
-	return query.String(), args, nil
+	return values
+}
+
+func (filter *InFilter) Where(values ...string) string {
+	return values[0] + " IN (" + strings.Join(values[1:], ", ") + ")"
 }
 
 // A JoinFilter is an AndFilter used for JOIN clauses and other forms
@@ -173,19 +123,16 @@ type JoinFilter struct {
 
 // JoinClause on a JoinFilter will return the full join clause for use
 // in a SELECT statement.
-func (filter *JoinFilter) JoinClause(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
+func (filter *JoinFilter) JoinClause(values ...string) string {
 	join := filter.Type + " join " + filter.QuotedJoinTable
 	if filter.QuotedAlias != "" && filter.QuotedAlias != "-" {
-		join += " AS " + filter.QuotedAlias
+		join += " as " + filter.QuotedAlias
 	}
-	on, args, err := filter.AndFilter.Where(structMap, dialect, startBindIdx)
-	if err != nil {
-		return "", nil, err
-	}
+	on := filter.AndFilter.Where(values...)
 	if on != "" {
 		join += " on " + on
 	}
-	return join, args, nil
+	return join
 }
 
 // A ComparisonFilter is a filter that compares two values.
@@ -193,50 +140,24 @@ type ComparisonFilter struct {
 	Left       interface{}
 	Comparison string
 	Right      interface{}
-
-	// Simply to make function definitions for helper functions
-	// shorter
-	structMap TableAndColumnLocater
-	dialect   gorp.Dialect
-	sql       bytes.Buffer
-	args      []interface{}
 }
 
-func (filter *ComparisonFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	filter.structMap = structMap
-	filter.dialect = dialect
-	filter.args = make([]interface{}, 0, 2)
-	filter.sql = bytes.Buffer{}
-	if err := filter.queryValue(filter.Left, startBindIdx); err != nil {
-		return "", nil, err
-	}
-	filter.sql.WriteString(filter.Comparison)
-	if err := filter.queryValue(filter.Right, startBindIdx+len(filter.args)); err != nil {
-		return "", nil, err
-	}
-	return filter.sql.String(), filter.args, nil
+func (filter *ComparisonFilter) ActualValues() []interface{} {
+	return []interface{}{filter.Left, filter.Right}
 }
 
-func (filter *ComparisonFilter) queryValue(columnOrValue interface{}, bindIdx int) (err error) {
-	sqlWrapper, isSqlWrapper := columnOrValue.(SqlWrapper)
-	if isSqlWrapper {
-		columnOrValue = sqlWrapper.ActualValue()
-	}
-	var sqlValue string
-	if reflect.ValueOf(columnOrValue).Kind() == reflect.Ptr {
-		sqlValue, err = filter.structMap.LocateTableAndColumn(columnOrValue)
-		if err != nil {
-			return err
-		}
-	} else {
-		sqlValue = filter.dialect.BindVar(bindIdx)
-		filter.args = append(filter.args, columnOrValue)
-	}
-	if isSqlWrapper {
-		sqlValue = sqlWrapper.WrapSql(sqlValue)
-	}
-	filter.sql.WriteString(sqlValue)
-	return
+func (filter *ComparisonFilter) Where(values ...string) string {
+	return values[0] + filter.Comparison + values[1]
+}
+
+// A SingleFilter just deals with a single value, like with booleans
+// or 'is not null' constraints.
+type SingleFilter struct {
+	field interface{}
+}
+
+func (filter *SingleFilter) ActualValues() []interface{} {
+	return []interface{}{filter.field}
 }
 
 // A NotFilter is a filter that inverts another filter.
@@ -244,67 +165,39 @@ type NotFilter struct {
 	filter Filter
 }
 
-func (filter *NotFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	whereStr, args, err := filter.filter.Where(structMap, dialect, startBindIdx)
-	if err != nil {
-		return "", nil, err
-	}
-	return "not " + whereStr, args, nil
+func (filter *NotFilter) ActualValues() []interface{} {
+	return filter.filter.ActualValues()
+}
+
+func (filter *NotFilter) Where(values ...string) string {
+	return "not " + filter.filter.Where(values...)
 }
 
 // A NullFilter is a filter that compares a field to null
 type NullFilter struct {
-	addrOrWrapper interface{}
+	SingleFilter
 }
 
-func (filter *NullFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	addr := filter.addrOrWrapper
-	sqlWrapper, isSqlWrapper := addr.(SqlWrapper)
-	if isSqlWrapper {
-		addr = sqlWrapper.ActualValue()
-	}
-	sqlVal, err := structMap.LocateTableAndColumn(addr)
-	if err != nil {
-		return "", nil, err
-	}
-	if isSqlWrapper {
-		sqlVal = sqlWrapper.WrapSql(sqlVal)
-	}
-	return sqlVal + " is null", nil, nil
+func (filter *NullFilter) Where(values ...string) string {
+	return values[0] + " is null"
 }
 
 // A NotNullFilter is a filter that compares a field to null
 type NotNullFilter struct {
-	addrOrWrapper interface{}
+	SingleFilter
 }
 
-func (filter *NotNullFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	addr := filter.addrOrWrapper
-	sqlWrapper, isSqlWrapper := addr.(SqlWrapper)
-	if isSqlWrapper {
-		addr = sqlWrapper.ActualValue()
-	}
-	sqlVal, err := structMap.LocateTableAndColumn(addr)
-	if err != nil {
-		return "", nil, err
-	}
-	if isSqlWrapper {
-		sqlVal = sqlWrapper.WrapSql(sqlVal)
-	}
-	return sqlVal + " is not null", nil, nil
+func (filter *NotNullFilter) Where(values ...string) string {
+	return values[0] + " is not null"
 }
 
 // A TrueFilter simply filters on a boolean column's truthiness.
 type TrueFilter struct {
-	addr interface{}
+	SingleFilter
 }
 
-func (filter *TrueFilter) Where(structMap TableAndColumnLocater, dialect gorp.Dialect, startBindIdx int) (string, []interface{}, error) {
-	column, err := structMap.LocateTableAndColumn(filter.addr)
-	if err != nil {
-		return "", nil, err
-	}
-	return column, nil, nil
+func (filter *TrueFilter) Where(values ...string) string {
+	return values[0]
 }
 
 // Or returns a filter that will OR all passed in filters
@@ -324,17 +217,23 @@ func Not(filter Filter) Filter {
 
 // Null returns a filter for fieldPtr IS NULL
 func Null(fieldPtr interface{}) Filter {
-	return &NullFilter{fieldPtr}
+	filter := &NullFilter{}
+	filter.field = fieldPtr
+	return filter
 }
 
 // NotNull returns a filter for fieldPtr IS NOT NULL
 func NotNull(fieldPtr interface{}) Filter {
-	return &NotNullFilter{fieldPtr}
+	filter := &NotNullFilter{}
+	filter.field = fieldPtr
+	return filter
 }
 
 // True returns a filter for fieldPtr's truthiness
 func True(fieldPtr interface{}) Filter {
-	return &TrueFilter{fieldPtr}
+	filter := &TrueFilter{}
+	filter.field = fieldPtr
+	return filter
 }
 
 // False returns a filter for NOT fieldPtr
