@@ -107,6 +107,7 @@ type QueryPlan struct {
 	limit          int64
 	offset         int64
 	args           []interface{}
+	argLen         int
 	argLock        sync.RWMutex
 	cache          interfaces.Cache
 	tables         []*gorp.TableMap
@@ -167,6 +168,7 @@ func (plan *QueryPlan) getArgs() []interface{} {
 func (plan *QueryPlan) appendArgs(args ...interface{}) {
 	plan.argLock.Lock()
 	plan.args = append(plan.args, args...)
+	plan.argLen = len(plan.args)
 	plan.argLock.Unlock()
 }
 func (plan *QueryPlan) resetArgs() {
@@ -178,6 +180,7 @@ func (plan *QueryPlan) resetArgs() {
 	if subQuery, ok := plan.target.Interface().(subQuery); ok {
 		plan.args = append(plan.args, subQuery.getArgs()...)
 	}
+	plan.argLen = len(plan.args)
 	plan.argLock.Unlock()
 }
 
@@ -838,7 +841,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	if subQuery, ok := target.(subQuery); ok {
 		target = subQuery.getTarget().Interface()
 	}
-	res, err := plan.executor.Select(target, query, plan.args...)
+	res, err := plan.executor.Select(target, query, plan.getArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -915,7 +918,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 
-	_, err = plan.executor.Select(target, query, plan.args...)
+	_, err = plan.executor.Select(target, query, plan.getArgs()...)
 	if err != nil {
 		return err
 	}
@@ -932,7 +935,7 @@ func (plan *QueryPlan) Count() (int64, error) {
 	if err := plan.writeSelectSuffix(buffer); err != nil {
 		return -1, err
 	}
-	return plan.executor.SelectInt(buffer.String(), plan.args...)
+	return plan.executor.SelectInt(buffer.String(), plan.getArgs()...)
 }
 
 func (plan *QueryPlan) QuotedTable() string {
@@ -1066,7 +1069,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 		} else {
 			buffer.WriteString(", ")
 		}
-		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, len(plan.args))
+		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, plan.argLen)
 		if err != nil {
 			return err
 		}
@@ -1086,12 +1089,12 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 	limiter, nonstandard := plan.dbMap.Dialect.(interfaces.NonstandardLimiter)
 	if plan.limit > 0 && nonstandard {
 		buffer.WriteString(" ")
-		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(plan.args))))
+		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(plan.argLen)))
 		plan.appendArgs(plan.limit)
 	}
 	if plan.offset > 0 {
 		buffer.WriteString(" offset ")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
+		buffer.WriteString(plan.dbMap.Dialect.BindVar(plan.argLen))
 		plan.appendArgs(plan.offset)
 	}
 	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
@@ -1099,7 +1102,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 		// Many dialects seem to ignore the SQL standard when it comes
 		// to the limit clause.
 		buffer.WriteString(" fetch next (")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
+		buffer.WriteString(plan.dbMap.Dialect.BindVar(plan.argLen))
 		plan.appendArgs(plan.limit)
 		buffer.WriteString(") rows only")
 	}
@@ -1130,7 +1133,7 @@ func (plan *QueryPlan) Insert() error {
 		buffer.WriteString(bindVar)
 	}
 	buffer.WriteString(")")
-	_, err := plan.executor.Exec(buffer.String(), plan.args...)
+	_, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 
 	if plan.cache != nil {
 		go plan.cache.DropEntries(plan.tables)
@@ -1204,7 +1207,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 	if err != nil {
 		return -1, err
 	}
@@ -1250,7 +1253,7 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 	if err != nil {
 		return -1, err
 	}
