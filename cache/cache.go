@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/memcachier/mc"
@@ -78,9 +77,6 @@ func (m *Memcachier) related(table *gorp.TableMap) []*gorp.TableMap {
 func (m *Memcachier) Set(tables []*gorp.TableMap, key, value string) error {
 	_, err := m.Conn.Set(key, value, 0, defaultCacheExpirationTime, 0)
 	if err == nil {
-		fmt.Println("SET CACHE - ", key)
-	} else {
-		fmt.Println("SET CACHE FAILED!! - ", key, err)
 	}
 	for _, t := range tables {
 		m.keys.add(t, key)
@@ -92,10 +88,8 @@ func (m *Memcachier) Set(tables []*gorp.TableMap, key, value string) error {
 func (m *Memcachier) Get(key string) (string, error) {
 	s, _, _, err := m.Conn.Get(key)
 	if err != nil {
-		fmt.Println("GET CACHE FAILED - ", key, err)
 		return "", err
 	}
-	fmt.Println("GET CACHE - ", key)
 	return s, err
 }
 
