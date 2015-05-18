@@ -2,12 +2,12 @@ package plans
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
-	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/dialects"
 	"github.com/outdoorsy/gorq/filters"
@@ -106,15 +106,14 @@ type QueryPlan struct {
 	limit          int64
 	offset         int64
 	args           []interface{}
-	memCache       *mc.Conn
-	cacheable      bool
-	invalidate     []interface{}
+	cache          interfaces.Cache
+	tables         []*gorp.TableMap
 }
 
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache *mc.Conn, cacheable bool, invalidate []interface{}, joinOps ...JoinOp) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache interfaces.Cache, joinOps ...JoinOp) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -124,11 +123,9 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache *mc.C
 	default:
 	}
 	plan := &QueryPlan{
-		dbMap:      m,
-		executor:   exec,
-		memCache:   cache,
-		cacheable:  cacheable,
-		invalidate: invalidate,
+		dbMap:    m,
+		executor: exec,
+		cache:    cache,
 	}
 
 	targetVal := reflect.ValueOf(target)
@@ -260,6 +257,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 			return nil, "", err
 		}
 	}
+	plan.tables = append(plan.tables, targetTable)
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
 
@@ -300,6 +298,22 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 		default:
 			panic("gorp: found unsupported type using fieldByIndex")
 		}
+	}
+	return v
+}
+
+// fieldOrNilByIndex is like fieldByIndex, except that it performs no
+// initialization.  If it finds a nil pointer, it just returns the nil
+// pointer, even if it is not the field requested.
+func fieldOrNilByIndex(v reflect.Value, index []int) reflect.Value {
+	for _, idx := range index {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return v
+			}
+			v = v.Elem()
+		}
+		v = v.Field(idx)
 	}
 	return v
 }
@@ -709,23 +723,102 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
+// cachedSelect will load data from cache for the current query.  If
+// target is a pointer to a slice, data will be appended to it;
+// otherwise, cachedSelect will return a []interface{} containing
+// elements of the same type as target.
+//
+// The return value will be nil if there is nothing in cache for this
+// query, or if there are errors while creating the return value.
+func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
+	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
+		return nil
+	}
+	key, err := plan.CacheKey()
+	if err != nil {
+		return nil
+	}
+	result, err := plan.cache.Get(key)
+	if err != nil || result == "" {
+		return nil
+	}
+
+	cached, err := restoreFromCache(result)
+	if err != nil {
+		return nil
+	}
+
+	var (
+		results  []interface{}
+		toTarget bool
+	)
+	targetType := target.Type()
+	if targetType.Kind() == reflect.Ptr && targetType.Elem().Kind() == reflect.Slice {
+		toTarget = true
+		target = target.Elem()
+		targetType = targetType.Elem().Elem()
+
+		// results still needs to be non-nil for the return value, but
+		// there's no point in taking up a bunch of extra memory.
+		results = []interface{}{}
+	} else {
+		// Currently, this case is only hit when Select() is called,
+		// which will send us the original query target, which
+		// *should* be a pointer to a struct.  And that is perfectly
+		// valid as targetType.
+
+		toTarget = false
+		results = make([]interface{}, 0, len(cached))
+	}
+
+	for _, resMap := range cached {
+		// Make sure newTarget is settable by creating a pointer to it
+		// and getting the Elem().
+		newTarget := reflect.New(targetType).Elem()
+		if newTarget.Kind() == reflect.Ptr {
+			newTarget.Set(reflect.New(targetType.Elem()))
+		}
+		for alias, value := range resMap {
+			if err := plan.setField(newTarget, alias, value); err != nil {
+				return nil
+			}
+		}
+		if toTarget {
+			target.Set(reflect.Append(target, newTarget))
+		} else {
+			results = append(results, newTarget.Interface())
+		}
+	}
+	return results
+}
+
+func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
+	var col *fieldColumnMap
+	for _, col = range plan.colMap {
+		if col.alias == alias {
+			break
+		}
+	}
+	if col == nil {
+		return fmt.Errorf("Cannot find field matching alias %s", alias)
+	}
+	field := fieldByIndex(target, col.column.FieldIndex())
+	v := reflect.ValueOf(value)
+	if !v.Type().ConvertibleTo(field.Type()) {
+		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
+	}
+	field.Set(v.Convert(field.Type()))
+	return nil
+}
+
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
+	if result := plan.cachedSelect(plan.target); result != nil {
+		return result, nil
+	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
-	}
-	if plan.cacheable && plan.memCache != nil {
-		cacheKey := generateCacheKey(query, plan)
-		table, err := getTableForCache(plan)
-		if err == nil {
-			data, err := getCacheData(cacheKey, plan.target, table, plan.memCache)
-			if err == nil { // fail silently - graceful fallback
-				return data, nil
-			} else if err != mc.ErrNotFound {
-				fmt.Println("error getting from cache", plan.table.TableName, err)
-			}
-		}
 	}
 
 	target := plan.target.Interface()
@@ -737,71 +830,84 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if plan.cacheable && plan.memCache != nil {
-		fmt.Println("setting in cache", plan.table.TableName, reflect.TypeOf(target).Name())
-		cacheKey := generateCacheKey(query, plan)
-		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-		addTableCacheMapEntry(tableKey, cacheKey)
-		for _, join := range plan.joins {
-			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
-		}
-		err = setCacheData(cacheKey, res, plan.colMap, plan.memCache) // fail silently - graceful fallback
-		if err != nil {
-			fmt.Println("error setting in cache", plan.table.TableName, err)
-		}
-	} else {
-		fmt.Println("didn't run in select", plan.cacheable, plan.target.Type().Name())
+	if plan.cache != nil {
+		go plan.cacheResults(res)
+	}
+	return res, nil
+}
+
+// cacheResults stores a result slice in cache.  Any failures will be
+// silent.
+func (plan *QueryPlan) cacheResults(results interface{}) {
+	defer func() {
+		// Don't let reflection panics propagate.
+		recover()
+	}()
+
+	cacheVal := reflect.ValueOf(results)
+	if cacheVal.Kind() == reflect.Ptr {
+		cacheVal = cacheVal.Elem()
+	}
+	if cacheVal.Kind() != reflect.Slice {
+		return
 	}
 
-	return res, nil
+	key, err := plan.CacheKey()
+	if err != nil {
+		return
+	}
+
+	cacheData := make([]map[string]interface{}, 0, cacheVal.Len())
+	for i := 0; i < cacheVal.Len(); i++ {
+		res := cacheVal.Index(i)
+		elementData := map[string]interface{}{}
+		for _, col := range plan.colMap {
+			if col.doSelect {
+				colVal := fieldOrNilByIndex(res, col.column.FieldIndex())
+				if colVal.Kind() == reflect.Ptr && colVal.IsNil() {
+					// Don't include nil elements in the cache.
+					continue
+				}
+				elementData[col.alias] = colVal.Interface()
+			}
+		}
+		cacheData = append(cacheData, elementData)
+	}
+	raw, err := json.Marshal(cacheData)
+	if err != nil {
+		return
+	}
+
+	encoded, err := prepareForCache(string(raw))
+	if err != nil {
+		return
+	}
+	plan.cache.Set(plan.tables, key, encoded)
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
 // append results directly to the passed in slice pointer.
 func (plan *QueryPlan) SelectToTarget(target interface{}) error {
-	targetType := reflect.TypeOf(target)
+	targetVal := reflect.ValueOf(target)
+	targetType := targetVal.Type()
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
+	}
+	if result := plan.cachedSelect(targetVal); result != nil {
+		// All results have been appended to target.
+		return nil
 	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return err
 	}
 
-	if plan.cacheable && plan.memCache != nil {
-		table, err := getTableForCache(plan)
-		if err == nil {
-			cacheKey := generateCacheKey(query, plan)
-			data, err := getCacheData(cacheKey, reflect.ValueOf(map[string]interface{}{}), table, plan.memCache)
-			if err == nil { // fail silently - graceful fallback
-				targetVal := reflect.ValueOf(target)
-				for _, item := range data {
-					empty := reflect.New(targetVal.Type().Elem().Elem())
-					from := reflect.ValueOf(item)
-					for _, key := range from.MapKeys() {
-						field := empty.FieldByIndex(plan.table.ColMap(key).FieldIndex())
-						field.Set(from.MapIndex(key))
-					}
-				}
-				return nil
-			}
-		}
-	}
-
 	_, err = plan.executor.Select(target, query, plan.args...)
 	if err != nil {
 		return err
 	}
-	if plan.cacheable && plan.memCache != nil {
-		cacheKey := generateCacheKey(query, plan)
-		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-		addTableCacheMapEntry(tableKey, cacheKey)
-		for _, join := range plan.joins {
-			addTableCacheMapEntry(join.QuotedJoinTable, cacheKey)
-		}
-		setCacheData(cacheKey, target, plan.colMap, plan.memCache) // fail silently - graceful fallback
-	} else {
-		fmt.Println("didn't run in select to target", plan.cacheable, plan.target.Type().Name())
+	if plan.cache != nil {
+		go plan.cacheResults(target)
 	}
 	return err
 }
@@ -1013,23 +1119,9 @@ func (plan *QueryPlan) Insert() error {
 	buffer.WriteString(")")
 	_, err := plan.executor.Exec(buffer.String(), plan.args...)
 
-	plan.invalidateCache()
+	go plan.cache.DropEntries(plan.tables)
 
 	return err
-}
-
-func (plan *QueryPlan) invalidateCache() {
-	if plan.cacheable && plan.memCache != nil {
-		tableKey := plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName)
-		evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache) // fail gracefully
-		for _, typeToInvalidate := range plan.invalidate {
-			table, err := plan.dbMap.TableFor(reflect.TypeOf(typeToInvalidate), false)
-			if err == nil {
-				tableKey := plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
-				evictCacheData(getTableCacheMapEntry(tableKey), plan.memCache)
-			}
-		}
-	}
 }
 
 // joinFromAndWhereClause will return the from and where clauses for
@@ -1106,7 +1198,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 		return -1, err
 	}
 
-	plan.invalidateCache()
+	go plan.cache.DropEntries(plan.tables)
 
 	return rows, nil
 }
@@ -1150,7 +1242,7 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		return -1, err
 	}
 
-	plan.invalidateCache()
+	go plan.cache.DropEntries(plan.tables)
 
 	return rows, nil
 }
