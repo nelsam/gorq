@@ -43,6 +43,12 @@ func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) er
 	return nil
 }
 
+// Returns the []plan.JoinOp for the DbMap. Useful for creating a
+// plans.Query with a gorp.SqlExecutor.
+func (m *DbMap) JoinOps() []plans.JoinOp {
+	return m.joinOps
+}
+
 // Query returns a Query type, which can be used to generate and run
 // queries using Go values instead of SQL literals.  The main
 // advantage to this method over e.g. dbMap.Select() is that most
