@@ -159,9 +159,13 @@ func (plan *QueryPlan) errors() []error {
 }
 
 func (plan *QueryPlan) getArgs() []interface{} {
-	var args []interface{}
 	plan.argLock.RLock()
-	args = plan.args
+	args := make([]interface{}, len(plan.args))
+	// have to copy the args into a new array here as this array is manipulated
+	// in code outside our control.
+	for i, v := range plan.args {
+		args[i] = v
+	}
 	plan.argLock.RUnlock()
 	return args
 }
@@ -747,7 +751,6 @@ func (plan *QueryPlan) Truncate() error {
 // query, or if there are errors while creating the return value.
 func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
 	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
-		fmt.Println("Not getting from cache for", plan.table.TableName, plan.cache.Cacheable(plan.table))
 		return nil
 	}
 	key, err := plan.CacheKey()
