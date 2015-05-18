@@ -91,6 +91,41 @@ func (m *DbMap) Begin() (*Transaction, error) {
 	return &Transaction{Transaction: *t, dbmap: m}, nil
 }
 
+func (m *DbMap) table(target interface{}) *gorp.TableMap {
+	t := reflect.TypeOf(target)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	table, err := m.TableFor(t, false)
+	if err != nil {
+		return nil
+	}
+	return table
+}
+
+func (m *DbMap) SetCacheable(target interface{}, cacheable bool) {
+	if m.Cache == nil {
+		return
+	}
+	t := m.table(target)
+	if t == nil {
+		return
+	}
+	m.Cache.SetCacheable(t, cacheable)
+}
+
+func (m *DbMap) Relate(src, target interface{}) {
+	if m.Cache == nil {
+		return
+	}
+	srcTable := m.table(src)
+	tgtTable := m.table(target)
+	if srcTable == nil || tgtTable == nil {
+		return
+	}
+	m.Cache.Relate(srcTable, tgtTable)
+}
+
 // Transaction embeds "github.com/outdoorsy/gorp".Transaction and
 // adds query methods to it.
 type Transaction struct {

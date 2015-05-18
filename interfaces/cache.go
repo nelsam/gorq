@@ -24,5 +24,5 @@ type Cache interface {
 	Cacheable(*gorp.TableMap) bool
 
 	// SetCacheable sets whether or not table is cacheable.
-	SetCacheable(*gorp.TableMap) bool
+	SetCacheable(*gorp.TableMap, bool)
 }
