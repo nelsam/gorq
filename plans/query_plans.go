@@ -732,6 +732,7 @@ func (plan *QueryPlan) Truncate() error {
 // query, or if there are errors while creating the return value.
 func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
 	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
+		fmt.Println("Not getting from cache for", plan.table.TableName, plan.cache.Cacheable(plan.table))
 		return nil
 	}
 	key, err := plan.CacheKey()
@@ -830,7 +831,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if plan.cache != nil {
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
 		go plan.cacheResults(res)
 	}
 	return res, nil
@@ -906,7 +907,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if err != nil {
 		return err
 	}
-	if plan.cache != nil {
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
 		go plan.cacheResults(target)
 	}
 	return err
@@ -1119,7 +1120,9 @@ func (plan *QueryPlan) Insert() error {
 	buffer.WriteString(")")
 	_, err := plan.executor.Exec(buffer.String(), plan.args...)
 
-	go plan.cache.DropEntries(plan.tables)
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
 
 	return err
 }
@@ -1198,7 +1201,9 @@ func (plan *QueryPlan) Update() (int64, error) {
 		return -1, err
 	}
 
-	go plan.cache.DropEntries(plan.tables)
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
 
 	return rows, nil
 }
@@ -1242,7 +1247,9 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		return -1, err
 	}
 
-	go plan.cache.DropEntries(plan.tables)
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
 
 	return rows, nil
 }
