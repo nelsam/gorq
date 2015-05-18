@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/dialects"
@@ -106,6 +107,7 @@ type QueryPlan struct {
 	limit          int64
 	offset         int64
 	args           []interface{}
+	argLock        sync.RWMutex
 	cache          interfaces.Cache
 	tables         []*gorp.TableMap
 }
@@ -156,7 +158,22 @@ func (plan *QueryPlan) errors() []error {
 }
 
 func (plan *QueryPlan) getArgs() []interface{} {
-	return plan.args
+	var args []interface{}
+	plan.argLock.RLock()
+	args = plan.args
+	plan.argLock.RUnlock()
+	return args
+}
+func (plan *QueryPlan) resetArgs() {
+	plan.argLock.Lock()
+	plan.args = nil
+	if len(plan.assignArgs) > 0 {
+		plan.args = append(plan.args, plan.assignArgs...)
+	}
+	if subQuery, ok := plan.target.Interface().(subQuery); ok {
+		plan.args = append(plan.args, subQuery.getArgs()...)
+	}
+	plan.argLock.Unlock()
 }
 
 func (plan *QueryPlan) getTable() *gorp.TableMap {
@@ -704,16 +721,6 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 		buffer.WriteString(joinClause)
 	}
 	return buffer.String(), nil
-}
-
-func (plan *QueryPlan) resetArgs() {
-	plan.args = nil
-	if len(plan.assignArgs) > 0 {
-		plan.args = append(plan.args, plan.assignArgs...)
-	}
-	if subQuery, ok := plan.target.Interface().(subQuery); ok {
-		plan.args = append(plan.args, subQuery.getArgs()...)
-	}
 }
 
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
