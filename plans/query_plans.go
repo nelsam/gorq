@@ -164,6 +164,11 @@ func (plan *QueryPlan) getArgs() []interface{} {
 	plan.argLock.RUnlock()
 	return args
 }
+func (plan *QueryPlan) appendArgs(args ...interface{}) {
+	plan.argLock.Lock()
+	plan.args = append(plan.args, args...)
+	plan.argLock.Unlock()
+}
 func (plan *QueryPlan) resetArgs() {
 	plan.argLock.Lock()
 	plan.args = nil
@@ -985,8 +990,8 @@ func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err erro
 			}
 			sqlValue = m.quotedTable + "." + m.quotedColumn
 		} else {
-			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
-			plan.args = append(plan.args, value)
+			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.getArgs()))
+			plan.appendArgs(value)
 		}
 	}
 	return
@@ -1066,7 +1071,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 			return err
 		}
 		buffer.WriteString(orderStr)
-		plan.args = append(plan.args, args...)
+		plan.appendArgs(args...)
 	}
 	for index, groupBy := range plan.groupBy {
 		if index == 0 {
@@ -1082,12 +1087,12 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 	if plan.limit > 0 && nonstandard {
 		buffer.WriteString(" ")
 		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(plan.args))))
-		plan.args = append(plan.args, plan.limit)
+		plan.appendArgs(plan.limit)
 	}
 	if plan.offset > 0 {
 		buffer.WriteString(" offset ")
 		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.offset)
+		plan.appendArgs(plan.offset)
 	}
 	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
 	if plan.limit > 0 && !nonstandard {
@@ -1095,7 +1100,7 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 		// to the limit clause.
 		buffer.WriteString(" fetch next (")
 		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.limit)
+		plan.appendArgs(plan.limit)
 		buffer.WriteString(") rows only")
 	}
 	return nil
