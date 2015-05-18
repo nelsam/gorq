@@ -11,58 +11,58 @@ import (
 const defaultCacheExpirationTime = 604800 // one week
 
 type tableKeys struct {
-	keys    map[*gorp.TableMap][]string
+	keys    map[string][]string
 	keyLock sync.RWMutex
 }
 
 func (t tableKeys) get(table *gorp.TableMap) []string {
 	t.keyLock.Lock()
-	keys := t.keys[table]
+	keys := t.keys[table.TableName]
 	t.keyLock.Unlock()
 	return keys
 }
 
 func (t tableKeys) add(table *gorp.TableMap, key string) {
 	t.keyLock.Lock()
-	t.keys[table] = append(t.keys[table], key)
+	t.keys[table.TableName] = append(t.keys[table.TableName], key)
 	t.keyLock.Unlock()
 }
 
 func (t tableKeys) drop(table *gorp.TableMap) {
 	t.keyLock.Lock()
-	delete(t.keys, table)
+	delete(t.keys, table.TableName)
 	t.keyLock.Unlock()
 }
 
 // Memcachier is a gorq.Cache using github.com/memcachier/mc.
 type Memcachier struct {
 	Conn          *mc.Conn
-	cacheables    map[*gorp.TableMap]bool
+	cacheables    map[string]bool
 	keys          tableKeys
-	relationships map[*gorp.TableMap][]*gorp.TableMap
+	relationships map[string][]*gorp.TableMap
 }
 
 func (m *Memcachier) SetCacheable(table *gorp.TableMap, cacheable bool) {
 	if m.cacheables == nil {
-		m.cacheables = map[*gorp.TableMap]bool{}
+		m.cacheables = map[string]bool{}
 	}
-	m.cacheables[table] = cacheable
+	m.cacheables[table.TableName] = cacheable
 }
 
 func (m *Memcachier) Cacheable(table *gorp.TableMap) bool {
 	if m.cacheables == nil {
 		return false
 	}
-	return m.cacheables[table]
+	return m.cacheables[table.TableName]
 }
 
 // Relate relates source to target, so that whenever keys for
 // source are dropped, keys for target are dropped as well.
 func (m *Memcachier) Relate(source, target *gorp.TableMap) {
 	if m.relationships == nil {
-		m.relationships = map[*gorp.TableMap][]*gorp.TableMap{}
+		m.relationships = map[string][]*gorp.TableMap{}
 	}
-	m.relationships[source] = append(m.relationships[source], target)
+	m.relationships[source.TableName] = append(m.relationships[source.TableName], target)
 }
 
 // related returns all tables related to table.
@@ -70,7 +70,7 @@ func (m *Memcachier) related(table *gorp.TableMap) []*gorp.TableMap {
 	if m.relationships == nil {
 		return nil
 	}
-	return m.relationships[table]
+	return m.relationships[table.TableName]
 }
 
 // Set sets a key:value pair in the cache, and relates that key to
@@ -92,8 +92,10 @@ func (m *Memcachier) Set(tables []*gorp.TableMap, key, value string) error {
 func (m *Memcachier) Get(key string) (string, error) {
 	s, _, _, err := m.Conn.Get(key)
 	if err != nil {
+		fmt.Println("GET CACHE FAILED - ", key, err)
 		return "", err
 	}
+	fmt.Println("GET CACHE - ", key)
 	return s, err
 }
 
