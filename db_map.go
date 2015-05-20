@@ -23,6 +23,7 @@ type SqlExecutor interface {
 // methods to it.
 type DbMap struct {
 	gorp.DbMap
+	Cache   interfaces.Cache
 	joinOps []plans.JoinOp
 }
 
@@ -40,6 +41,12 @@ func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) er
 	newOp.Join = op
 	m.joinOps = append(m.joinOps, newOp)
 	return nil
+}
+
+// Returns the []plan.JoinOp for the DbMap. Useful for creating a
+// plans.Query with a gorp.SqlExecutor.
+func (m *DbMap) JoinOps() []plans.JoinOp {
+	return m.joinOps
 }
 
 // Query returns a Query type, which can be used to generate and run
@@ -77,7 +84,7 @@ func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) er
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
+	return plans.Query(gorpMap, gorpMap, target, m.Cache, m.joinOps...)
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
@@ -90,6 +97,41 @@ func (m *DbMap) Begin() (*Transaction, error) {
 	return &Transaction{Transaction: *t, dbmap: m}, nil
 }
 
+func (m *DbMap) table(target interface{}) *gorp.TableMap {
+	t := reflect.TypeOf(target)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	table, err := m.TableFor(t, false)
+	if err != nil {
+		return nil
+	}
+	return table
+}
+
+func (m *DbMap) SetCacheable(target interface{}, cacheable bool) {
+	if m.Cache == nil {
+		return
+	}
+	t := m.table(target)
+	if t == nil {
+		return
+	}
+	m.Cache.SetCacheable(t, cacheable)
+}
+
+func (m *DbMap) Relate(src, target interface{}) {
+	if m.Cache == nil {
+		return
+	}
+	srcTable := m.table(src)
+	tgtTable := m.table(target)
+	if srcTable == nil || tgtTable == nil {
+		return
+	}
+	m.Cache.Relate(srcTable, tgtTable)
+}
+
 // Transaction embeds "github.com/outdoorsy/gorp".Transaction and
 // adds query methods to it.
 type Transaction struct {
@@ -100,5 +142,5 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.joinOps...)
+	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.Cache, t.dbmap.joinOps...)
 }

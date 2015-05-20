@@ -2,10 +2,12 @@ package plans
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/dialects"
@@ -14,7 +16,7 @@ import (
 )
 
 type tableAlias struct {
-	gorp.TableMap
+	*gorp.TableMap
 	quotedFromClause string
 	dialect          gorp.Dialect
 }
@@ -105,12 +107,16 @@ type QueryPlan struct {
 	limit          int64
 	offset         int64
 	args           []interface{}
+	argLen         int
+	argLock        sync.RWMutex
+	cache          interfaces.Cache
+	tables         []*gorp.TableMap
 }
 
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, joinOps ...JoinOp) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache interfaces.Cache, joinOps ...JoinOp) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -122,6 +128,7 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, joinOps ...
 	plan := &QueryPlan{
 		dbMap:    m,
 		executor: exec,
+		cache:    cache,
 	}
 
 	targetVal := reflect.ValueOf(target)
@@ -134,7 +141,7 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, joinOps ...
 		return plan
 	}
 	plan.target = targetVal
-	plan.table = &targetTable.TableMap
+	plan.table = targetTable.TableMap
 	plan.quotedTable = targetTable.tableForFromClause()
 	return plan
 }
@@ -152,7 +159,33 @@ func (plan *QueryPlan) errors() []error {
 }
 
 func (plan *QueryPlan) getArgs() []interface{} {
-	return plan.args
+	plan.argLock.RLock()
+	args := make([]interface{}, len(plan.args))
+	// have to copy the args into a new array here as this array is manipulated
+	// in code outside our control.
+	for i, v := range plan.args {
+		args[i] = v
+	}
+	plan.argLock.RUnlock()
+	return args
+}
+func (plan *QueryPlan) appendArgs(args ...interface{}) {
+	plan.argLock.Lock()
+	plan.args = append(plan.args, args...)
+	plan.argLen = len(plan.args)
+	plan.argLock.Unlock()
+}
+func (plan *QueryPlan) resetArgs() {
+	plan.argLock.Lock()
+	plan.args = nil
+	if len(plan.assignArgs) > 0 {
+		plan.args = append(plan.args, plan.assignArgs...)
+	}
+	if subQuery, ok := plan.target.Interface().(subQuery); ok {
+		plan.args = append(plan.args, subQuery.getArgs()...)
+	}
+	plan.argLen = len(plan.args)
+	plan.argLock.Unlock()
 }
 
 func (plan *QueryPlan) getTable() *gorp.TableMap {
@@ -173,7 +206,7 @@ func (plan *QueryPlan) mapSubQuery(q subQuery) *tableAlias {
 		m.quotedTable = alias
 		plan.colMap = append(plan.colMap, m)
 	}
-	return &tableAlias{TableMap: *q.getTable(), dialect: plan.dbMap.Dialect, quotedFromClause: quotedFromClause}
+	return &tableAlias{TableMap: q.getTable(), dialect: plan.dbMap.Dialect, quotedFromClause: quotedFromClause}
 }
 
 func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*tableAlias, string, error) {
@@ -253,6 +286,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 			return nil, "", err
 		}
 	}
+	plan.tables = append(plan.tables, targetTable)
 
 	plan.lastRefs = make([]filters.Filter, 0, 2)
 
@@ -269,12 +303,12 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 				}
 			}
 		}
-		return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
+		return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
 	}
 	if err = plan.mapColumns(targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
 		return nil, "", err
 	}
-	return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect}, alias, nil
+	return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect}, alias, nil
 }
 
 // fieldByIndex is a copy of v.FieldByIndex, except that it will
@@ -293,6 +327,22 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 		default:
 			panic("gorp: found unsupported type using fieldByIndex")
 		}
+	}
+	return v
+}
+
+// fieldOrNilByIndex is like fieldByIndex, except that it performs no
+// initialization.  If it finds a nil pointer, it just returns the nil
+// pointer, even if it is not the field requested.
+func fieldOrNilByIndex(v reflect.Value, index []int) reflect.Value {
+	for _, idx := range index {
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return v
+			}
+			v = v.Elem()
+		}
+		v = v.Field(idx)
 	}
 	return v
 }
@@ -685,16 +735,6 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 	return buffer.String(), nil
 }
 
-func (plan *QueryPlan) resetArgs() {
-	plan.args = nil
-	if len(plan.assignArgs) > 0 {
-		plan.args = append(plan.args, plan.assignArgs...)
-	}
-	if subQuery, ok := plan.target.Interface().(subQuery); ok {
-		plan.args = append(plan.args, subQuery.getArgs()...)
-	}
-}
-
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
 func (plan *QueryPlan) Truncate() error {
 	query := fmt.Sprintf("truncate table %s", plan.QuotedTable())
@@ -702,31 +742,192 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
+// cachedSelect will load data from cache for the current query.  If
+// target is a pointer to a slice, data will be appended to it;
+// otherwise, cachedSelect will return a []interface{} containing
+// elements of the same type as target.
+//
+// The return value will be nil if there is nothing in cache for this
+// query, or if there are errors while creating the return value.
+func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
+	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
+		return nil
+	}
+	key, err := plan.CacheKey()
+	if err != nil {
+		return nil
+	}
+	result, err := plan.cache.Get(key)
+	if err != nil || result == "" {
+		return nil
+	}
+
+	cached, err := restoreFromCache(result)
+	if err != nil {
+		return nil
+	}
+
+	var (
+		results  []interface{}
+		toTarget bool
+	)
+	targetType := target.Type()
+	if targetType.Kind() == reflect.Ptr && targetType.Elem().Kind() == reflect.Slice {
+		toTarget = true
+		target = target.Elem()
+		targetType = targetType.Elem().Elem()
+
+		// results still needs to be non-nil for the return value, but
+		// there's no point in taking up a bunch of extra memory.
+		results = []interface{}{}
+	} else {
+		// Currently, this case is only hit when Select() is called,
+		// which will send us the original query target, which
+		// *should* be a pointer to a struct.  And that is perfectly
+		// valid as targetType.
+
+		toTarget = false
+		results = make([]interface{}, 0, len(cached))
+	}
+
+	for _, resMap := range cached {
+		// Make sure newTarget is settable by creating a pointer to it
+		// and getting the Elem().
+		newTarget := reflect.New(targetType).Elem()
+		if newTarget.Kind() == reflect.Ptr {
+			newTarget.Set(reflect.New(targetType.Elem()))
+		}
+		for alias, value := range resMap {
+			if err := plan.setField(newTarget, alias, value); err != nil {
+				return nil
+			}
+		}
+		if toTarget {
+			target.Set(reflect.Append(target, newTarget))
+		} else {
+			results = append(results, newTarget.Interface())
+		}
+	}
+	return results
+}
+
+func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
+	var col *fieldColumnMap
+	for _, col = range plan.colMap {
+		if col.alias == alias {
+			break
+		}
+	}
+	if col == nil {
+		return fmt.Errorf("Cannot find field matching alias %s", alias)
+	}
+	field := fieldByIndex(target, col.column.FieldIndex())
+	v := reflect.ValueOf(value)
+	if !v.Type().ConvertibleTo(field.Type()) {
+		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
+	}
+	field.Set(v.Convert(field.Type()))
+	return nil
+}
+
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
+	if result := plan.cachedSelect(plan.target); result != nil {
+		return result, nil
+	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
 	}
+
 	target := plan.target.Interface()
 	if subQuery, ok := target.(subQuery); ok {
 		target = subQuery.getTarget().Interface()
 	}
-	return plan.executor.Select(target, query, plan.args...)
+	res, err := plan.executor.Select(target, query, plan.getArgs()...)
+	if err != nil {
+		return nil, err
+	}
+
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
+		go plan.cacheResults(res)
+	}
+	return res, nil
+}
+
+// cacheResults stores a result slice in cache.  Any failures will be
+// silent.
+func (plan *QueryPlan) cacheResults(results interface{}) {
+	defer func() {
+		// Don't let reflection panics propagate.
+		recover()
+	}()
+
+	cacheVal := reflect.ValueOf(results)
+	if cacheVal.Kind() == reflect.Ptr {
+		cacheVal = cacheVal.Elem()
+	}
+	if cacheVal.Kind() != reflect.Slice {
+		return
+	}
+
+	key, err := plan.CacheKey()
+	if err != nil {
+		return
+	}
+
+	cacheData := make([]map[string]interface{}, 0, cacheVal.Len())
+	for i := 0; i < cacheVal.Len(); i++ {
+		res := cacheVal.Index(i)
+		elementData := map[string]interface{}{}
+		for _, col := range plan.colMap {
+			if col.doSelect {
+				colVal := fieldOrNilByIndex(res, col.column.FieldIndex())
+				if colVal.Kind() == reflect.Ptr && colVal.IsNil() {
+					// Don't include nil elements in the cache.
+					continue
+				}
+				elementData[col.alias] = colVal.Interface()
+			}
+		}
+		cacheData = append(cacheData, elementData)
+	}
+	raw, err := json.Marshal(cacheData)
+	if err != nil {
+		return
+	}
+
+	encoded, err := prepareForCache(string(raw))
+	if err != nil {
+		return
+	}
+	plan.cache.Set(plan.tables, key, encoded)
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
 // append results directly to the passed in slice pointer.
 func (plan *QueryPlan) SelectToTarget(target interface{}) error {
-	targetType := reflect.TypeOf(target)
+	targetVal := reflect.ValueOf(target)
+	targetType := targetVal.Type()
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
+	}
+	if result := plan.cachedSelect(targetVal); result != nil {
+		// All results have been appended to target.
+		return nil
 	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return err
 	}
-	_, err = plan.executor.Select(target, query, plan.args...)
+
+	_, err = plan.executor.Select(target, query, plan.getArgs()...)
+	if err != nil {
+		return err
+	}
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
+		go plan.cacheResults(target)
+	}
 	return err
 }
 
@@ -737,7 +938,7 @@ func (plan *QueryPlan) Count() (int64, error) {
 	if err := plan.writeSelectSuffix(buffer); err != nil {
 		return -1, err
 	}
-	return plan.executor.SelectInt(buffer.String(), plan.args...)
+	return plan.executor.SelectInt(buffer.String(), plan.getArgs()...)
 }
 
 func (plan *QueryPlan) QuotedTable() string {
@@ -795,8 +996,8 @@ func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err erro
 			}
 			sqlValue = m.quotedTable + "." + m.quotedColumn
 		} else {
-			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
-			plan.args = append(plan.args, value)
+			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.getArgs()))
+			plan.appendArgs(value)
 		}
 	}
 	return
@@ -871,12 +1072,12 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 		} else {
 			buffer.WriteString(", ")
 		}
-		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, len(plan.args))
+		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, plan.argLen)
 		if err != nil {
 			return err
 		}
 		buffer.WriteString(orderStr)
-		plan.args = append(plan.args, args...)
+		plan.appendArgs(args...)
 	}
 	for index, groupBy := range plan.groupBy {
 		if index == 0 {
@@ -891,21 +1092,21 @@ func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
 	limiter, nonstandard := plan.dbMap.Dialect.(interfaces.NonstandardLimiter)
 	if plan.limit > 0 && nonstandard {
 		buffer.WriteString(" ")
-		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(plan.args))))
-		plan.args = append(plan.args, plan.limit)
+		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(plan.argLen)))
+		plan.appendArgs(plan.limit)
 	}
 	if plan.offset > 0 {
 		buffer.WriteString(" offset ")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.offset)
+		buffer.WriteString(plan.dbMap.Dialect.BindVar(plan.argLen))
+		plan.appendArgs(plan.offset)
 	}
 	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
 	if plan.limit > 0 && !nonstandard {
 		// Many dialects seem to ignore the SQL standard when it comes
 		// to the limit clause.
 		buffer.WriteString(" fetch next (")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.limit)
+		buffer.WriteString(plan.dbMap.Dialect.BindVar(plan.argLen))
+		plan.appendArgs(plan.limit)
 		buffer.WriteString(") rows only")
 	}
 	return nil
@@ -935,7 +1136,12 @@ func (plan *QueryPlan) Insert() error {
 		buffer.WriteString(bindVar)
 	}
 	buffer.WriteString(")")
-	_, err := plan.executor.Exec(buffer.String(), plan.args...)
+	_, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
+
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
+
 	return err
 }
 
@@ -1004,7 +1210,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 	if err != nil {
 		return -1, err
 	}
@@ -1012,6 +1218,11 @@ func (plan *QueryPlan) Update() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
+
 	return rows, nil
 }
 
@@ -1045,7 +1256,7 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		whereClause += joinWhereClause
 	}
 	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 	if err != nil {
 		return -1, err
 	}
@@ -1053,6 +1264,11 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+
+	if plan.cache != nil {
+		go plan.cache.DropEntries(plan.tables)
+	}
+
 	return rows, nil
 }
 
