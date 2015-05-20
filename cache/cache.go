@@ -16,6 +16,9 @@ type tableKeys struct {
 
 func (t tableKeys) get(table *gorp.TableMap) []string {
 	t.keyLock.Lock()
+	if t.keys == nil {
+		t.keys = map[*gorp.TableMap][]string{}
+	}
 	keys := t.keys[table]
 	t.keyLock.Unlock()
 	return keys
@@ -23,12 +26,18 @@ func (t tableKeys) get(table *gorp.TableMap) []string {
 
 func (t tableKeys) add(table *gorp.TableMap, key string) {
 	t.keyLock.Lock()
+	if t.keys == nil {
+		t.keys = map[*gorp.TableMap][]string{}
+	}
 	t.keys[table] = append(t.keys[table], key)
 	t.keyLock.Unlock()
 }
 
 func (t tableKeys) drop(table *gorp.TableMap) {
 	t.keyLock.Lock()
+	if t.keys == nil {
+		t.keys = map[*gorp.TableMap][]string{}
+	}
 	delete(t.keys, table)
 	t.keyLock.Unlock()
 }
@@ -76,8 +85,6 @@ func (m *Memcachier) related(table *gorp.TableMap) []*gorp.TableMap {
 // all entries in the tables slice.
 func (m *Memcachier) Set(tables []*gorp.TableMap, key, value string) error {
 	_, err := m.Conn.Set(key, value, 0, defaultCacheExpirationTime, 0)
-	if err == nil {
-	}
 	for _, t := range tables {
 		m.keys.add(t, key)
 	}
