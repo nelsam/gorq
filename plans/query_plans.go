@@ -16,7 +16,7 @@ import (
 )
 
 type tableAlias struct {
-	gorp.TableMap
+	*gorp.TableMap
 	quotedFromClause string
 	dialect          gorp.Dialect
 }
@@ -141,7 +141,7 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache inter
 		return plan
 	}
 	plan.target = targetVal
-	plan.table = &targetTable.TableMap
+	plan.table = targetTable.TableMap
 	plan.quotedTable = targetTable.tableForFromClause()
 	return plan
 }
@@ -206,7 +206,7 @@ func (plan *QueryPlan) mapSubQuery(q subQuery) *tableAlias {
 		m.quotedTable = alias
 		plan.colMap = append(plan.colMap, m)
 	}
-	return &tableAlias{TableMap: *q.getTable(), dialect: plan.dbMap.Dialect, quotedFromClause: quotedFromClause}
+	return &tableAlias{TableMap: q.getTable(), dialect: plan.dbMap.Dialect, quotedFromClause: quotedFromClause}
 }
 
 func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*tableAlias, string, error) {
@@ -303,12 +303,12 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 				}
 			}
 		}
-		return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
+		return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
 	}
 	if err = plan.mapColumns(targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
 		return nil, "", err
 	}
-	return &tableAlias{TableMap: *targetTable, dialect: plan.dbMap.Dialect}, alias, nil
+	return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect}, alias, nil
 }
 
 // fieldByIndex is a copy of v.FieldByIndex, except that it will
