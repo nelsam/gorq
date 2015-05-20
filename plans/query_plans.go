@@ -887,6 +887,7 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 					// Don't include nil elements in the cache.
 					continue
 				}
+				fmt.Println(colVal.Interface())
 				elementData[col.alias] = colVal.Interface()
 			}
 		}
@@ -895,6 +896,10 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 	raw, err := json.Marshal(cacheData)
 	if err != nil {
 		return
+	}
+
+	for _, t := range plan.tables {
+		fmt.Println(t.TableName, key, string(raw))
 	}
 
 	encoded, err := prepareForCache(string(raw))
