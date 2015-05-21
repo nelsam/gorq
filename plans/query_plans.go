@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -333,14 +334,22 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 // initialization.  If it finds a nil pointer, it just returns the nil
 // pointer, even if it is not the field requested.
 func fieldOrNilByIndex(v reflect.Value, index []int) reflect.Value {
+	var f reflect.StructField
+	t := v.Type()
 	for _, idx := range index {
 		if v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				return v
 			}
 			v = v.Elem()
+			t = t.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			log.Printf("Non-struct field with nested values: %s", f.Name)
 		}
 		v = v.Field(idx)
+		f = t.Field(idx)
+		t = f.Type
 	}
 	return v
 }
@@ -849,6 +858,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
+		log.Printf("Caching %v", res)
 		go plan.cacheResults(res)
 	}
 	return res, nil
@@ -859,7 +869,9 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 func (plan *QueryPlan) cacheResults(results interface{}) {
 	defer func() {
 		// Don't let reflection panics propagate.
-		recover()
+		// if r := recover(); r != nil {
+		// 	log.Printf("Recovered from %v", r)
+		// }
 	}()
 
 	cacheVal := reflect.ValueOf(results)
@@ -900,15 +912,14 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 	}
 	raw, err := json.Marshal(cacheData)
 	if err != nil {
+		log.Printf("Error from marshal: %v", err)
 		return
 	}
 
-	for _, t := range plan.tables {
-		fmt.Println(t.TableName, key, string(raw))
-	}
-
+	log.Printf("Caching raw string %s", string(raw))
 	encoded, err := prepareForCache(string(raw))
 	if err != nil {
+		log.Printf("Error from prepareForCache: %v", err)
 		return
 	}
 	plan.cache.Set(plan.tables, key, encoded)
