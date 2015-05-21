@@ -236,12 +236,11 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		targetTable *gorp.TableMap
 		joinColumn  *gorp.ColumnMap
 	)
-	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
-		if m.column.TargetTable() != nil {
-			prefix, alias = m.prefix, m.alias
-			joinColumn = m.column
-			targetTable = m.column.TargetTable()
-		}
+	parentMap, err := plan.colMap.joinMapForPointer(targetVal.Interface())
+	if err == nil && parentMap.column.TargetTable() != nil {
+		prefix, alias = parentMap.prefix, parentMap.alias
+		joinColumn = parentMap.column
+		targetTable = parentMap.column.TargetTable()
 	}
 
 	// targetVal could feasibly be a slice or array, to store
@@ -279,7 +278,6 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		return nil, "", errors.New("gorp: Cannot create query plan - no struct found to map to")
 	}
 
-	var err error
 	if targetTable == nil {
 		targetTable, err = plan.dbMap.TableFor(targetVal.Type().Elem(), false)
 		if err != nil {
@@ -305,7 +303,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		}
 		return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
 	}
-	if err = plan.mapColumns(targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
+	if err = plan.mapColumns(parentMap, targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
 		return nil, "", err
 	}
 	return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect}, alias, nil
@@ -370,7 +368,7 @@ func reference(leftTable, leftCol, rightTable, rightCol string) filters.Filter {
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, value reflect.Value, prefix string, joinOps ...JoinOp) (err error) {
+func (plan *QueryPlan) mapColumns(parentMap *fieldColumnMap, parent interface{}, table *gorp.TableMap, value reflect.Value, prefix string, joinOps ...JoinOp) (err error) {
 	value = value.Elem()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
@@ -411,6 +409,7 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 			}
 		}
 		fieldMap := &fieldColumnMap{
+			parentMap:    parentMap,
 			parent:       parent,
 			field:        fieldRef,
 			selectTarget: fieldRef,
@@ -879,15 +878,21 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 	cacheData := make([]map[string]interface{}, 0, cacheVal.Len())
 	for i := 0; i < cacheVal.Len(); i++ {
 		res := cacheVal.Index(i)
+		if res.Kind() == reflect.Interface {
+			res = res.Elem()
+		}
 		elementData := map[string]interface{}{}
 		for _, col := range plan.colMap {
 			if col.doSelect {
-				colVal := fieldOrNilByIndex(res, col.column.FieldIndex())
+				colIdx := col.column.FieldIndex()
+				for current := col.parentMap; current != nil; current = current.parentMap {
+					colIdx = append(current.column.FieldIndex(), colIdx...)
+				}
+				colVal := fieldOrNilByIndex(res, colIdx)
 				if colVal.Kind() == reflect.Ptr && colVal.IsNil() {
 					// Don't include nil elements in the cache.
 					continue
 				}
-				fmt.Println(colVal.Interface())
 				elementData[col.alias] = colVal.Interface()
 			}
 		}
