@@ -49,7 +49,7 @@ func prepareForCache(data string) (encoded string, err error) {
 	return string(b.Bytes()), nil
 }
 
-func restoreFromCache(encoded string) (decoded []map[string]interface{}, err error) {
+func restoreFromCache(encoded string) (decoded []interface{}, err error) {
 	r, err := gzip.NewReader(strings.NewReader(encoded))
 	if err != nil {
 		return nil, err

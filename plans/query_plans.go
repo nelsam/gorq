@@ -750,6 +750,47 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
+func (plan *QueryPlan) unmarshalCachedResults(cached []interface{}, resultSlice reflect.Value, elementType reflect.Type) error {
+	for _, res := range cached {
+		resMap := res.(map[string]interface{})
+		// Make sure newTarget is settable by creating a pointer to it
+		// and getting the Elem().
+		newTarget := reflect.New(elementType).Elem()
+		if newTarget.Kind() == reflect.Ptr {
+			newTarget.Set(reflect.New(elementType.Elem()))
+		}
+		for alias, value := range resMap {
+			if err := plan.setField(newTarget, alias, value); err != nil {
+				return err
+			}
+		}
+		resultSlice.Set(reflect.Append(resultSlice, newTarget))
+	}
+	return nil
+}
+
+func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
+	var col *fieldColumnMap
+	for _, col = range plan.colMap {
+		if col.alias == alias {
+			break
+		}
+	}
+	if col == nil {
+		return fmt.Errorf("Cannot find field matching alias %s", alias)
+	}
+	field := fieldByIndex(target, col.column.FieldIndex())
+	v := reflect.ValueOf(value)
+	if field.Kind() == reflect.Slice {
+		return plan.unmarshalCachedResults(value.([]interface{}), field, field.Type().Elem())
+	}
+	if !v.Type().ConvertibleTo(field.Type()) {
+		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
+	}
+	field.Set(v.Convert(field.Type()))
+	return nil
+}
+
 // cachedSelect will load data from cache for the current query.  If
 // target is a pointer to a slice, data will be appended to it;
 // otherwise, cachedSelect will return a []interface{} containing
@@ -775,14 +816,11 @@ func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
 		return nil
 	}
 
-	var (
-		results  []interface{}
-		toTarget bool
-	)
+	var results []interface{}
 	targetType := target.Type()
+	var selectTarget reflect.Value
 	if targetType.Kind() == reflect.Ptr && targetType.Elem().Kind() == reflect.Slice {
-		toTarget = true
-		target = target.Elem()
+		selectTarget = target.Elem()
 		targetType = targetType.Elem().Elem()
 
 		// results still needs to be non-nil for the return value, but
@@ -794,48 +832,13 @@ func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
 		// *should* be a pointer to a struct.  And that is perfectly
 		// valid as targetType.
 
-		toTarget = false
 		results = make([]interface{}, 0, len(cached))
+		selectTarget = reflect.ValueOf(&results)
 	}
-
-	for _, resMap := range cached {
-		// Make sure newTarget is settable by creating a pointer to it
-		// and getting the Elem().
-		newTarget := reflect.New(targetType).Elem()
-		if newTarget.Kind() == reflect.Ptr {
-			newTarget.Set(reflect.New(targetType.Elem()))
-		}
-		for alias, value := range resMap {
-			if err := plan.setField(newTarget, alias, value); err != nil {
-				return nil
-			}
-		}
-		if toTarget {
-			target.Set(reflect.Append(target, newTarget))
-		} else {
-			results = append(results, newTarget.Interface())
-		}
+	if err := plan.unmarshalCachedResults(cached, selectTarget, targetType); err != nil {
+		return nil
 	}
 	return results
-}
-
-func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
-	var col *fieldColumnMap
-	for _, col = range plan.colMap {
-		if col.alias == alias {
-			break
-		}
-	}
-	if col == nil {
-		return fmt.Errorf("Cannot find field matching alias %s", alias)
-	}
-	field := fieldByIndex(target, col.column.FieldIndex())
-	v := reflect.ValueOf(value)
-	if !v.Type().ConvertibleTo(field.Type()) {
-		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
-	}
-	field.Set(v.Convert(field.Type()))
-	return nil
 }
 
 // Select will run this query plan as a SELECT statement.
