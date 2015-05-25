@@ -344,9 +344,6 @@ func fieldOrNilByIndex(v reflect.Value, index []int) reflect.Value {
 			v = v.Elem()
 			t = t.Elem()
 		}
-		if v.Kind() != reflect.Struct {
-			log.Printf("Non-struct field with nested values: %s", f.Name)
-		}
 		v = v.Field(idx)
 		f = t.Field(idx)
 		t = f.Type
@@ -861,10 +858,37 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		log.Printf("Caching %v", res)
 		go plan.cacheResults(res)
 	}
 	return res, nil
+}
+
+func (plan *QueryPlan) toCacheFormat(cacheVal reflect.Value) []interface{} {
+	if cacheVal.Kind() != reflect.Slice {
+		return nil
+	}
+	cacheData := make([]interface{}, 0, cacheVal.Len())
+	if cacheVal.Len() == 0 {
+		return cacheData
+	}
+	// We're guaranteed to have at least one element, here.
+	src := cacheVal.Index(0)
+	for src.Kind() == reflect.Interface || src.Kind() == reflect.Ptr {
+		src = src.Elem()
+	}
+	srcType := src.Type()
+	cacheMap := &cacheMapping{}
+	cacheMap.cacheType = srcType
+	for _, m := range plan.colMap {
+		if m.doSelect {
+			nested := []*fieldColumnMap{m}
+			for current := m.parentMap; current != nil; current = current.parentMap {
+				nested = append([]*fieldColumnMap{current}, nested...)
+			}
+			cacheMap.add(nested)
+		}
+	}
+	return cacheMap.valueFor(cacheVal).([]interface{})
 }
 
 // cacheResults stores a result slice in cache.  Any failures will be
@@ -890,28 +914,10 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 		return
 	}
 
-	cacheData := make([]map[string]interface{}, 0, cacheVal.Len())
-	for i := 0; i < cacheVal.Len(); i++ {
-		res := cacheVal.Index(i)
-		if res.Kind() == reflect.Interface {
-			res = res.Elem()
-		}
-		elementData := map[string]interface{}{}
-		for _, col := range plan.colMap {
-			if col.doSelect {
-				colIdx := col.column.FieldIndex()
-				for current := col.parentMap; current != nil; current = current.parentMap {
-					colIdx = append(current.column.FieldIndex(), colIdx...)
-				}
-				colVal := fieldOrNilByIndex(res, colIdx)
-				if colVal.Kind() == reflect.Ptr && colVal.IsNil() {
-					// Don't include nil elements in the cache.
-					continue
-				}
-				elementData[col.alias] = colVal.Interface()
-			}
-		}
-		cacheData = append(cacheData, elementData)
+	cacheData := plan.toCacheFormat(cacheVal)
+	if cacheData == nil {
+		// We don't want to cache this.
+		return
 	}
 	raw, err := json.Marshal(cacheData)
 	if err != nil {
