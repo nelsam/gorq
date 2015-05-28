@@ -795,11 +795,11 @@ func (plan *QueryPlan) setField(target reflect.Value, alias string, value interf
 //
 // The return value will be nil if there is nothing in cache for this
 // query, or if there are errors while creating the return value.
-func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
+func (plan *QueryPlan) cachedSelect(target reflect.Value, query string) []interface{} {
 	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
 		return nil
 	}
-	key, err := plan.CacheKey()
+	key, err := CacheKey(query, plan.getArgs())
 	if err != nil {
 		return nil
 	}
@@ -840,12 +840,13 @@ func (plan *QueryPlan) cachedSelect(target reflect.Value) []interface{} {
 
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
-	if result := plan.cachedSelect(plan.target); result != nil {
-		return result, nil
-	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
+	}
+
+	if result := plan.cachedSelect(plan.target, query); result != nil {
+		return result, nil
 	}
 
 	target := plan.target.Interface()
@@ -858,7 +859,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(res)
+		go plan.cacheResults(res, query)
 	}
 	return res, nil
 }
@@ -893,7 +894,7 @@ func (plan *QueryPlan) toCacheFormat(cacheVal reflect.Value) []interface{} {
 
 // cacheResults stores a result slice in cache.  Any failures will be
 // silent.
-func (plan *QueryPlan) cacheResults(results interface{}) {
+func (plan *QueryPlan) cacheResults(results interface{}, query string) {
 	defer func() {
 		// Don't let reflection panics propagate.
 		// if r := recover(); r != nil {
@@ -909,7 +910,7 @@ func (plan *QueryPlan) cacheResults(results interface{}) {
 		return
 	}
 
-	key, err := plan.CacheKey()
+	key, err := CacheKey(query, plan.getArgs())
 	if err != nil {
 		return
 	}
@@ -942,13 +943,13 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
 	}
-	if result := plan.cachedSelect(targetVal); result != nil {
-		// All results have been appended to target.
-		return nil
-	}
 	query, err := plan.selectQuery()
 	if err != nil {
 		return err
+	}
+	if result := plan.cachedSelect(targetVal, query); result != nil {
+		// All results have been appended to target.
+		return nil
 	}
 
 	_, err = plan.executor.Select(target, query, plan.getArgs()...)
@@ -956,7 +957,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(target)
+		go plan.cacheResults(target, query)
 	}
 	return err
 }
