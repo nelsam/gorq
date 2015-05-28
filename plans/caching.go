@@ -11,12 +11,8 @@ import (
 	"strings"
 )
 
-func (plan *QueryPlan) CacheKey() (string, error) {
-	query, err := plan.selectQuery()
-	if err != nil {
-		return "", err
-	}
-	key := fmt.Sprintf("%s: %v", query, plan.args)
+func CacheKey(query string, args []interface{}) (string, error) {
+	key := fmt.Sprintf("%s: %v", query, args)
 	digest := sha256.Sum256([]byte(key))
 	return base64.StdEncoding.EncodeToString(digest[:]), nil
 }
