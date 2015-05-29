@@ -324,7 +324,7 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 		case reflect.Struct:
 			v = v.Field(idx)
 		default:
-			panic("gorp: found unsupported type using fieldByIndex")
+			panic("gorp: found unsupported type using fieldByIndex: " + v.Kind().String())
 		}
 	}
 	return v
@@ -920,6 +920,7 @@ func (plan *QueryPlan) cacheResults(results interface{}, query string) {
 		// We don't want to cache this.
 		return
 	}
+	// fmt.Println("about to encode to json: ", cacheData)
 	raw, err := json.Marshal(cacheData)
 	if err != nil {
 		log.Printf("Error from marshal: %v", err)
