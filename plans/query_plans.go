@@ -859,7 +859,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(res, query)
+		plan.cacheResults(res, query)
 	}
 	return res, nil
 }
@@ -926,13 +926,14 @@ func (plan *QueryPlan) cacheResults(results interface{}, query string) {
 		return
 	}
 
-	log.Printf("Caching raw string %s", string(raw))
-	encoded, err := prepareForCache(string(raw))
-	if err != nil {
-		log.Printf("Error from prepareForCache: %v", err)
-		return
-	}
-	plan.cache.Set(plan.tables, key, encoded)
+	go func() {
+		encoded, err := prepareForCache(string(raw))
+		if err != nil {
+			log.Printf("Error from prepareForCache: %v", err)
+			return
+		}
+		plan.cache.Set(plan.tables, key, encoded)
+	}()
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -957,7 +958,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(target, query)
+		plan.cacheResults(target, query)
 	}
 	return err
 }
