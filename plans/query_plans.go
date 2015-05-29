@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -236,12 +237,11 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		targetTable *gorp.TableMap
 		joinColumn  *gorp.ColumnMap
 	)
-	if m, err := plan.colMap.joinMapForPointer(targetVal.Interface()); err == nil {
-		if m.column.TargetTable() != nil {
-			prefix, alias = m.prefix, m.alias
-			joinColumn = m.column
-			targetTable = m.column.TargetTable()
-		}
+	parentMap, err := plan.colMap.joinMapForPointer(targetVal.Interface())
+	if err == nil && parentMap.column.TargetTable() != nil {
+		prefix, alias = parentMap.prefix, parentMap.alias
+		joinColumn = parentMap.column
+		targetTable = parentMap.column.TargetTable()
 	}
 
 	// targetVal could feasibly be a slice or array, to store
@@ -279,7 +279,6 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		return nil, "", errors.New("gorp: Cannot create query plan - no struct found to map to")
 	}
 
-	var err error
 	if targetTable == nil {
 		targetTable, err = plan.dbMap.TableFor(targetVal.Type().Elem(), false)
 		if err != nil {
@@ -305,7 +304,7 @@ func (plan *QueryPlan) mapTable(targetVal reflect.Value, joinOps ...JoinOp) (*ta
 		}
 		return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect, quotedFromClause: query}, alias, nil
 	}
-	if err = plan.mapColumns(targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
+	if err = plan.mapColumns(parentMap, targetVal.Interface(), targetTable, targetVal, prefix, joinOps...); err != nil {
 		return nil, "", err
 	}
 	return &tableAlias{TableMap: targetTable, dialect: plan.dbMap.Dialect}, alias, nil
@@ -325,7 +324,7 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 		case reflect.Struct:
 			v = v.Field(idx)
 		default:
-			panic("gorp: found unsupported type using fieldByIndex")
+			panic("gorp: found unsupported type using fieldByIndex: " + v.Kind().String())
 		}
 	}
 	return v
@@ -335,14 +334,19 @@ func fieldByIndex(v reflect.Value, index []int) reflect.Value {
 // initialization.  If it finds a nil pointer, it just returns the nil
 // pointer, even if it is not the field requested.
 func fieldOrNilByIndex(v reflect.Value, index []int) reflect.Value {
+	var f reflect.StructField
+	t := v.Type()
 	for _, idx := range index {
 		if v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				return v
 			}
 			v = v.Elem()
+			t = t.Elem()
 		}
 		v = v.Field(idx)
+		f = t.Field(idx)
+		t = f.Type
 	}
 	return v
 }
@@ -370,7 +374,7 @@ func reference(leftTable, leftCol, rightTable, rightCol string) filters.Filter {
 // it doesn't do any special handling for overridden fields, because
 // passing the address of a field that has been overridden is
 // difficult to do accidentally.
-func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, value reflect.Value, prefix string, joinOps ...JoinOp) (err error) {
+func (plan *QueryPlan) mapColumns(parentMap *fieldColumnMap, parent interface{}, table *gorp.TableMap, value reflect.Value, prefix string, joinOps ...JoinOp) (err error) {
 	value = value.Elem()
 	if plan.colMap == nil {
 		plan.colMap = make(structColumnMap, 0, value.NumField())
@@ -411,6 +415,7 @@ func (plan *QueryPlan) mapColumns(parent interface{}, table *gorp.TableMap, valu
 			}
 		}
 		fieldMap := &fieldColumnMap{
+			parentMap:    parentMap,
 			parent:       parent,
 			field:        fieldRef,
 			selectTarget: fieldRef,
@@ -742,6 +747,47 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
+func (plan *QueryPlan) unmarshalCachedResults(cached []interface{}, resultSlice reflect.Value, elementType reflect.Type) error {
+	for _, res := range cached {
+		resMap := res.(map[string]interface{})
+		// Make sure newTarget is settable by creating a pointer to it
+		// and getting the Elem().
+		newTarget := reflect.New(elementType).Elem()
+		if newTarget.Kind() == reflect.Ptr {
+			newTarget.Set(reflect.New(elementType.Elem()))
+		}
+		for alias, value := range resMap {
+			if err := plan.setField(newTarget, alias, value); err != nil {
+				return err
+			}
+		}
+		resultSlice.Set(reflect.Append(resultSlice, newTarget))
+	}
+	return nil
+}
+
+func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
+	var col *fieldColumnMap
+	for _, col = range plan.colMap {
+		if col.alias == alias {
+			break
+		}
+	}
+	if col == nil {
+		return fmt.Errorf("Cannot find field matching alias %s", alias)
+	}
+	field := fieldByIndex(target, col.column.FieldIndex())
+	v := reflect.ValueOf(value)
+	if field.Kind() == reflect.Slice {
+		return plan.unmarshalCachedResults(value.([]interface{}), field, field.Type().Elem())
+	}
+	if !v.Type().ConvertibleTo(field.Type()) {
+		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
+	}
+	field.Set(v.Convert(field.Type()))
+	return nil
+}
+
 // cachedSelect will load data from cache for the current query.  If
 // target is a pointer to a slice, data will be appended to it;
 // otherwise, cachedSelect will return a []interface{} containing
@@ -767,14 +813,11 @@ func (plan *QueryPlan) cachedSelect(target reflect.Value, query string) []interf
 		return nil
 	}
 
-	var (
-		results  []interface{}
-		toTarget bool
-	)
+	var results []interface{}
 	targetType := target.Type()
+	var selectTarget reflect.Value
 	if targetType.Kind() == reflect.Ptr && targetType.Elem().Kind() == reflect.Slice {
-		toTarget = true
-		target = target.Elem()
+		selectTarget = target.Elem()
 		targetType = targetType.Elem().Elem()
 
 		// results still needs to be non-nil for the return value, but
@@ -786,48 +829,13 @@ func (plan *QueryPlan) cachedSelect(target reflect.Value, query string) []interf
 		// *should* be a pointer to a struct.  And that is perfectly
 		// valid as targetType.
 
-		toTarget = false
 		results = make([]interface{}, 0, len(cached))
+		selectTarget = reflect.ValueOf(&results)
 	}
-
-	for _, resMap := range cached {
-		// Make sure newTarget is settable by creating a pointer to it
-		// and getting the Elem().
-		newTarget := reflect.New(targetType).Elem()
-		if newTarget.Kind() == reflect.Ptr {
-			newTarget.Set(reflect.New(targetType.Elem()))
-		}
-		for alias, value := range resMap {
-			if err := plan.setField(newTarget, alias, value); err != nil {
-				return nil
-			}
-		}
-		if toTarget {
-			target.Set(reflect.Append(target, newTarget))
-		} else {
-			results = append(results, newTarget.Interface())
-		}
+	if err := plan.unmarshalCachedResults(cached, selectTarget, targetType); err != nil {
+		return nil
 	}
 	return results
-}
-
-func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
-	var col *fieldColumnMap
-	for _, col = range plan.colMap {
-		if col.alias == alias {
-			break
-		}
-	}
-	if col == nil {
-		return fmt.Errorf("Cannot find field matching alias %s", alias)
-	}
-	field := fieldByIndex(target, col.column.FieldIndex())
-	v := reflect.ValueOf(value)
-	if !v.Type().ConvertibleTo(field.Type()) {
-		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
-	}
-	field.Set(v.Convert(field.Type()))
-	return nil
 }
 
 // Select will run this query plan as a SELECT statement.
@@ -851,9 +859,37 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	}
 
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(res, query)
+		plan.cacheResults(res, query)
 	}
 	return res, nil
+}
+
+func (plan *QueryPlan) toCacheFormat(cacheVal reflect.Value) []interface{} {
+	if cacheVal.Kind() != reflect.Slice {
+		return nil
+	}
+	cacheData := make([]interface{}, 0, cacheVal.Len())
+	if cacheVal.Len() == 0 {
+		return cacheData
+	}
+	// We're guaranteed to have at least one element, here.
+	src := cacheVal.Index(0)
+	for src.Kind() == reflect.Interface || src.Kind() == reflect.Ptr {
+		src = src.Elem()
+	}
+	srcType := src.Type()
+	cacheMap := &cacheMapping{}
+	cacheMap.cacheType = srcType
+	for _, m := range plan.colMap {
+		if m.doSelect {
+			nested := []*fieldColumnMap{m}
+			for current := m.parentMap; current != nil; current = current.parentMap {
+				nested = append([]*fieldColumnMap{current}, nested...)
+			}
+			cacheMap.add(nested)
+		}
+	}
+	return cacheMap.valueFor(cacheVal).([]interface{})
 }
 
 // cacheResults stores a result slice in cache.  Any failures will be
@@ -861,7 +897,9 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 func (plan *QueryPlan) cacheResults(results interface{}, query string) {
 	defer func() {
 		// Don't let reflection panics propagate.
-		recover()
+		// if r := recover(); r != nil {
+		// 	log.Printf("Recovered from %v", r)
+		// }
 	}()
 
 	cacheVal := reflect.ValueOf(results)
@@ -877,32 +915,26 @@ func (plan *QueryPlan) cacheResults(results interface{}, query string) {
 		return
 	}
 
-	cacheData := make([]map[string]interface{}, 0, cacheVal.Len())
-	for i := 0; i < cacheVal.Len(); i++ {
-		res := cacheVal.Index(i)
-		elementData := map[string]interface{}{}
-		for _, col := range plan.colMap {
-			if col.doSelect {
-				colVal := fieldOrNilByIndex(res, col.column.FieldIndex())
-				if colVal.Kind() == reflect.Ptr && colVal.IsNil() {
-					// Don't include nil elements in the cache.
-					continue
-				}
-				elementData[col.alias] = colVal.Interface()
-			}
-		}
-		cacheData = append(cacheData, elementData)
+	cacheData := plan.toCacheFormat(cacheVal)
+	if cacheData == nil {
+		// We don't want to cache this.
+		return
 	}
+	// fmt.Println("about to encode to json: ", cacheData)
 	raw, err := json.Marshal(cacheData)
 	if err != nil {
+		log.Printf("Error from marshal: %v", err)
 		return
 	}
 
-	encoded, err := prepareForCache(string(raw))
-	if err != nil {
-		return
-	}
-	plan.cache.Set(plan.tables, key, encoded)
+	go func() {
+		encoded, err := prepareForCache(string(raw))
+		if err != nil {
+			log.Printf("Error from prepareForCache: %v", err)
+			return
+		}
+		plan.cache.Set(plan.tables, key, encoded)
+	}()
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -927,7 +959,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 		return err
 	}
 	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
-		go plan.cacheResults(target, query)
+		plan.cacheResults(target, query)
 	}
 	return err
 }

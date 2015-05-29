@@ -17,7 +17,11 @@ type fieldColumnMap struct {
 	// the struct being used to construct this query.
 	field interface{}
 
-	// column should be the column that matches the field that addr
+	// parentMap stores the *fieldColumnMap that is the parent of this
+	// *fieldColumnMap, if any.
+	parentMap *fieldColumnMap
+
+	// column should be the column that matches the field that field
 	// points to.
 	column *gorp.ColumnMap
 
