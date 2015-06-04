@@ -91,33 +91,34 @@ type QueryPlan struct {
 	// returned immediately.
 	Errors []error
 
-	table          *gorp.TableMap
-	dbMap          *gorp.DbMap
-	quotedTable    string
-	executor       gorp.SqlExecutor
-	target         reflect.Value
-	colMap         structColumnMap
-	joins          []*filters.JoinFilter
-	lastRefs       []filters.Filter
-	assignCols     []string
-	assignBindVars []string
-	assignArgs     []interface{}
-	filters        filters.MultiFilter
-	orderBy        []order
-	groupBy        []string
-	limit          int64
-	offset         int64
-	args           []interface{}
-	argLen         int
-	argLock        sync.RWMutex
-	cache          interfaces.Cache
-	tables         []*gorp.TableMap
+	table           *gorp.TableMap
+	dbMap           *gorp.DbMap
+	quotedTable     string
+	executor        gorp.SqlExecutor
+	target          reflect.Value
+	colMap          structColumnMap
+	joins           []*filters.JoinFilter
+	lastRefs        []filters.Filter
+	assignCols      []string
+	assignBindVars  []string
+	assignArgs      []interface{}
+	filters         filters.MultiFilter
+	orderBy         []order
+	groupBy         []string
+	limit           int64
+	offset          int64
+	args            []interface{}
+	argLen          int
+	argLock         sync.RWMutex
+	cache           interfaces.Cache
+	cachingDisabled bool
+	tables          []*gorp.TableMap
 }
 
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache interfaces.Cache, joinOps ...JoinOp) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache interfaces.Cache, cachingDisabled bool, joinOps ...JoinOp) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -127,9 +128,10 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache inter
 	default:
 	}
 	plan := &QueryPlan{
-		dbMap:    m,
-		executor: exec,
-		cache:    cache,
+		dbMap:           m,
+		executor:        exec,
+		cache:           cache,
+		cachingDisabled: cachingDisabled,
 	}
 
 	targetVal := reflect.ValueOf(target)
@@ -845,8 +847,10 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if result := plan.cachedSelect(plan.target, query); result != nil {
-		return result, nil
+	if !plan.cachingDisabled {
+		if result := plan.cachedSelect(plan.target, query); result != nil {
+			return result, nil
+		}
 	}
 
 	target := plan.target.Interface()
@@ -858,7 +862,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) && !plan.cachingDisabled {
 		plan.cacheResults(res, query)
 	}
 	return res, nil
@@ -949,16 +953,18 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if err != nil {
 		return err
 	}
-	if result := plan.cachedSelect(targetVal, query); result != nil {
-		// All results have been appended to target.
-		return nil
+	if !plan.cachingDisabled {
+		if result := plan.cachedSelect(targetVal, query); result != nil {
+			// All results have been appended to target.
+			return nil
+		}
 	}
 
 	_, err = plan.executor.Select(target, query, plan.getArgs()...)
 	if err != nil {
 		return err
 	}
-	if plan.cache != nil && plan.cache.Cacheable(plan.table) {
+	if plan.cache != nil && plan.cache.Cacheable(plan.table) && !plan.cachingDisabled {
 		plan.cacheResults(target, query)
 	}
 	return err
@@ -1171,7 +1177,7 @@ func (plan *QueryPlan) Insert() error {
 	buffer.WriteString(")")
 	_, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
 
-	if plan.cache != nil {
+	if plan.cache != nil && !plan.cachingDisabled {
 		go plan.cache.DropEntries(plan.tables)
 	}
 
@@ -1252,7 +1258,7 @@ func (plan *QueryPlan) Update() (int64, error) {
 		return -1, err
 	}
 
-	if plan.cache != nil {
+	if plan.cache != nil && !plan.cachingDisabled {
 		go plan.cache.DropEntries(plan.tables)
 	}
 
@@ -1298,7 +1304,7 @@ func (plan *QueryPlan) Delete() (int64, error) {
 		return -1, err
 	}
 
-	if plan.cache != nil {
+	if plan.cache != nil && !plan.cachingDisabled {
 		go plan.cache.DropEntries(plan.tables)
 	}
 

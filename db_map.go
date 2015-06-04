@@ -23,8 +23,9 @@ type SqlExecutor interface {
 // methods to it.
 type DbMap struct {
 	gorp.DbMap
-	Cache   interfaces.Cache
-	joinOps []plans.JoinOp
+	Cache           interfaces.Cache
+	cachingDisabled bool
+	joinOps         []plans.JoinOp
 }
 
 func (m *DbMap) JoinOp(target, fieldPtrOrName interface{}, op plans.JoinFunc) error {
@@ -84,7 +85,7 @@ func (m *DbMap) JoinOps() []plans.JoinOp {
 // capable of.
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
-	return plans.Query(gorpMap, gorpMap, target, m.Cache, m.joinOps...)
+	return plans.Query(gorpMap, gorpMap, target, m.Cache, m.cachingDisabled, m.joinOps...)
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
@@ -107,6 +108,10 @@ func (m *DbMap) table(target interface{}) *gorp.TableMap {
 		return nil
 	}
 	return table
+}
+
+func (m *DbMap) SetCachingDisabled(disabled bool) {
+	m.cachingDisabled = disabled
 }
 
 func (m *DbMap) SetCacheable(target interface{}, cacheable bool) {
@@ -142,5 +147,5 @@ type Transaction struct {
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
-	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.Cache, t.dbmap.joinOps...)
+	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.Cache, t.dbmap.cachingDisabled, t.dbmap.joinOps...)
 }
