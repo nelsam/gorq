@@ -268,14 +268,57 @@ func (plan *QueryPlan) DiscardOffset() interfaces.SelectQuery {
 	return plan
 }
 
+// argOrColumn returns the string that should be used to represent a
+// value in a query.  If the value is detected to be a field, an error
+// will be returned if the field cannot be selected.  If the value is
+// used as an argument, it will be appended to args and the returned
+// string will be the bind value.
+func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err error) {
+	switch src := value.(type) {
+	case filters.SqlWrapper:
+		value = src.ActualValue()
+		wrapperVal, err := plan.argOrColumn(value)
+		if err != nil {
+			return "", err
+		}
+		return src.WrapSql(wrapperVal), nil
+	case filters.MultiSqlWrapper:
+		values := src.ActualValues()
+		wrapperVals := make([]string, 0, len(values))
+		for _, val := range values {
+			wrapperVal, err := plan.argOrColumn(val)
+			if err != nil {
+				return "", err
+			}
+			wrapperVals = append(wrapperVals, wrapperVal)
+		}
+		return src.WrapSql(wrapperVals...), nil
+	default:
+		if reflect.TypeOf(value).Kind() == reflect.Ptr {
+			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
+		} else {
+			plan.args = append(plan.args, value)
+			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
+		}
+	}
+	return
+}
+
 func (plan *QueryPlan) whereClause() (string, error) {
 	if plan.filters == nil {
 		return "", nil
 	}
-	where, whereArgs, err := plan.filters.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
-	if err != nil {
-		return "", err
+	whereArgs := plan.filters.ActualValues()
+	whereVals := make([]string, 0, len(whereArgs))
+	for _, arg := range whereArgs {
+		val, err := plan.argOrColumn(arg)
+		if err != nil {
+			return "", err
+		}
+		whereVals = append(whereVals, val)
 	}
+	where := plan.filters.Where(whereVals...)
+
 	if where != "" {
 		plan.args = append(plan.args, whereArgs...)
 		return " where " + where, nil
@@ -286,10 +329,17 @@ func (plan *QueryPlan) whereClause() (string, error) {
 func (plan *QueryPlan) selectJoinClause() (string, error) {
 	buffer := bytes.Buffer{}
 	for _, join := range plan.joins {
-		joinClause, joinArgs, err := join.JoinClause(plan.colMap, plan.dbMap.Dialect, len(plan.args))
-		if err != nil {
-			return "", err
+		joinArgs := join.ActualValues()
+		joinVals := make([]string, 0, len(joinArgs))
+		for _, arg := range joinArgs {
+			val, err := plan.argOrColumn(arg)
+			if err != nil {
+				return "", err
+			}
+			joinVals = append(joinVals, val)
 		}
+		joinClause := join.JoinClause(joinVals...)
+
 		buffer.WriteString(joinClause)
 		plan.args = append(plan.args, joinArgs...)
 	}
@@ -483,10 +533,16 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 	whereBuffer := bytes.Buffer{}
 	for _, join := range plan.joins {
 		fromSlice = append(fromSlice, join.QuotedJoinTable)
-		whereClause, whereArgs, err := join.Where(plan.colMap, plan.dbMap.Dialect, len(plan.args))
-		if err != nil {
-			return "", "", err
+		whereArgs := join.ActualValues()
+		whereVals := make([]string, 0, len(whereArgs))
+		for _, arg := range whereArgs {
+			val, err := plan.argOrColumn(arg)
+			if err != nil {
+				return "", "", err
+			}
+			whereVals = append(whereVals, val)
 		}
+		whereClause := join.Where(whereVals...)
 		whereBuffer.WriteString(whereClause)
 		plan.args = append(plan.args, whereArgs...)
 	}
