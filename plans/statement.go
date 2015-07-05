@@ -2,6 +2,7 @@ package plans
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/nelsam/gorq/interfaces"
 )
@@ -12,9 +13,10 @@ type Statement struct {
 	args  []interface{}
 }
 
-// Query returns the query string for s.
-func (s *Statement) Query() string {
-	return s.query.String()
+// Query returns the query string for s, replacing bound argument
+// placeholders with bindArgs.
+func (s *Statement) Query(bindArgs ...string) string {
+	return fmt.Sprintf(s.query.String(), s.args...)
 }
 
 // Args returns the arguments for s.
@@ -63,7 +65,7 @@ func (plan *QueryPlan) addWhereClause(statement *Statement) error {
 	whereArgs := plan.filters.ActualValues()
 	whereVals := make([]string, 0, len(whereArgs))
 	for _, arg := range whereArgs {
-		args, val, err := plan.argOrColumn(len(statement.args), arg)
+		args, val, err := plan.argOrColumn(arg)
 		if err != nil {
 			return err
 		}
@@ -86,7 +88,7 @@ func (plan *QueryPlan) addJoinClause(statement *Statement) error {
 		joinArgs := join.ActualValues()
 		joinVals := make([]string, 0, len(joinArgs))
 		for _, arg := range joinArgs {
-			args, val, err := plan.argOrColumn(len(statement.args), arg)
+			args, val, err := plan.argOrColumn(arg)
 			if err != nil {
 				return err
 			}
@@ -118,7 +120,7 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 		} else {
 			statement.query.WriteString(", ")
 		}
-		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, len(statement.args))
+		orderStr, args, err := orderBy.OrderBy(plan.colMap)
 		if err != nil {
 			return err
 		}
@@ -138,12 +140,12 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 	limiter, nonstandard := plan.dbMap.Dialect.(interfaces.NonstandardLimiter)
 	if plan.limit > 0 && nonstandard {
 		statement.query.WriteString(" ")
-		statement.query.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(statement.args))))
+		statement.query.WriteString(limiter.Limit(BindVarPlaceholder))
 		statement.args = append(statement.args, plan.limit)
 	}
 	if plan.offset > 0 {
 		statement.query.WriteString(" OFFSET ")
-		statement.query.WriteString(plan.dbMap.Dialect.BindVar(len(statement.args)))
+		statement.query.WriteString(BindVarPlaceholder)
 		statement.args = append(statement.args, plan.offset)
 	}
 	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
@@ -151,7 +153,7 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 		// Many dialects seem to ignore the SQL standard when it comes
 		// to the limit clause.
 		statement.query.WriteString(" FETCH NEXT (")
-		statement.query.WriteString(plan.dbMap.Dialect.BindVar(len(statement.args)))
+		statement.query.WriteString(BindVarPlaceholder)
 		statement.args = append(statement.args, plan.limit)
 		statement.query.WriteString(") ROWS ONLY")
 	}

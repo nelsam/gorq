@@ -10,6 +10,11 @@ import (
 	"github.com/nelsam/gorq/interfaces"
 )
 
+// BindVarPlaceholder is used as a placeholder string for bindVar
+// strings.  Wherever it is used in a query, it should be replaced by
+// the correct bind variable for the dialect in use.
+const BindVarPlaceholder = "%s"
+
 // A QueryPlan is a Query.  It returns itself on most method calls;
 // the one exception is Assign(), which returns an AssignQueryPlan (a type of
 // QueryPlan that implements AssignQuery instead of Query).  The return
@@ -159,6 +164,12 @@ func (plan *QueryPlan) In(fieldPtr interface{}, values ...interface{}) interface
 	return plan.Filter(filters.In(fieldPtr, values...))
 }
 
+// InSubQuery adds a column IN (subQuery) comparison to the where
+// clause.
+func (plan *QueryPlan) InSubQuery(fieldPtr interface{}, subQuery filters.SubQuery) interfaces.WhereQuery {
+	return plan.Filter(filters.InSubQuery(fieldPtr, subQuery))
+}
+
 // Like adds a column LIKE pattern comparison to the where clause.
 func (plan *QueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.WhereQuery {
 	return plan.Filter(filters.Like(fieldPtr, pattern))
@@ -270,11 +281,11 @@ func (plan *QueryPlan) DiscardOffset() interfaces.SelectQuery {
 // will be returned if the field cannot be selected.  If the value is
 // used as an argument, it will be appended to args and the returned
 // string will be the bind value.
-func (plan *QueryPlan) argOrColumn(currentArgCount int, value interface{}) (args []interface{}, sqlValue string, err error) {
+func (plan *QueryPlan) argOrColumn(value interface{}) (args []interface{}, sqlValue string, err error) {
 	switch src := value.(type) {
 	case filters.SqlWrapper:
 		var wrapperVal string
-		args, wrapperVal, err = plan.argOrColumn(currentArgCount, value)
+		args, wrapperVal, err = plan.argOrColumn(value)
 		if err != nil {
 			return nil, "", err
 		}
@@ -284,7 +295,7 @@ func (plan *QueryPlan) argOrColumn(currentArgCount int, value interface{}) (args
 		wrapperVals := make([]string, 0, len(values))
 		args := make([]interface{}, 0, len(values))
 		for _, val := range values {
-			newArgs, wrapperVal, err := plan.argOrColumn(currentArgCount+len(args), val)
+			newArgs, wrapperVal, err := plan.argOrColumn(val)
 			if err != nil {
 				return nil, "", err
 			}
@@ -296,7 +307,7 @@ func (plan *QueryPlan) argOrColumn(currentArgCount int, value interface{}) (args
 		if reflect.TypeOf(value).Kind() == reflect.Ptr {
 			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
 		} else {
-			sqlValue = plan.dbMap.Dialect.BindVar(currentArgCount + len(args))
+			sqlValue = BindVarPlaceholder
 			args = append(args, value)
 		}
 	}
@@ -310,17 +321,30 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
-// Select will run this query plan as a SELECT statement.
-func (plan *QueryPlan) Select() ([]interface{}, error) {
+func (plan *QueryPlan) bindVars(statement *Statement) []string {
+	bindVars := make([]string, 0, len(statement.args))
+	for i := range statement.args {
+		bindVars = append(bindVars, plan.dbMap.Dialect.BindVar(i))
+	}
+	return bindVars
+}
+
+func (plan *QueryPlan) runSelect(target interface{}) ([]interface{}, error) {
 	statement, err := plan.SelectStatement()
 	if err != nil {
 		return nil, err
 	}
+	bindVars := plan.bindVars(statement)
+	return plan.executor.Select(target, statement.Query(bindVars...), statement.args...)
+}
+
+// Select will run this query plan as a SELECT statement.
+func (plan *QueryPlan) Select() ([]interface{}, error) {
 	target := plan.target.Interface()
 	if subQuery, ok := target.(subQuery); ok {
 		target = subQuery.getTarget().Interface()
 	}
-	return plan.executor.Select(target, statement.query.String(), statement.args...)
+	return plan.runSelect(target)
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -330,11 +354,7 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
 	}
-	statement, err := plan.SelectStatement()
-	if err != nil {
-		return err
-	}
-	_, err = plan.executor.Select(target, statement.query.String(), statement.args...)
+	_, err := plan.runSelect(target)
 	return err
 }
 
@@ -344,7 +364,8 @@ func (plan *QueryPlan) Count() (int64, error) {
 	if err := plan.addSelectSuffix(statement); err != nil {
 		return -1, err
 	}
-	return plan.executor.SelectInt(statement.query.String(), statement.args...)
+	bindVars := plan.bindVars(statement)
+	return plan.executor.SelectInt(statement.Query(bindVars...), statement.args...)
 }
 
 func (plan *QueryPlan) QuotedTable() string {
@@ -391,18 +412,18 @@ func (plan *QueryPlan) Update() (int64, error) {
 	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	statement.query.WriteString(" SET ")
 	for i, col := range plan.assignCols {
-		bindVar := plan.assignBindVars[i]
 		if i > 0 {
 			statement.query.WriteString(", ")
 		}
 		statement.query.WriteString(col)
 		statement.query.WriteString("=")
-		statement.query.WriteString(bindVar)
+		statement.query.WriteString(BindVarPlaceholder)
 	}
 	if err := plan.addWhereClause(statement); err != nil {
 		return -1, err
 	}
-	res, err := plan.executor.Exec(statement.query.String(), statement.args...)
+	bindVars := plan.bindVars(statement)
+	res, err := plan.executor.Exec(statement.Query(bindVars...), statement.args...)
 	if err != nil {
 		return -1, err
 	}
@@ -424,7 +445,8 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	if err := plan.addWhereClause(statement); err != nil {
 		return -1, err
 	}
-	res, err := plan.executor.Exec(statement.query.String(), statement.args...)
+	bindVars := plan.bindVars(statement)
+	res, err := plan.executor.Exec(statement.Query(bindVars...), statement.args...)
 	if err != nil {
 		return -1, err
 	}
@@ -443,6 +465,11 @@ type JoinQueryPlan struct {
 
 func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.JoinQuery {
 	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *JoinQueryPlan) InSubQuery(fieldPtr interface{}, subQuery filters.SubQuery) interfaces.JoinQuery {
+	plan.QueryPlan.InSubQuery(fieldPtr, subQuery)
 	return plan
 }
 
@@ -537,6 +564,11 @@ func (plan *AssignQueryPlan) Filter(filters ...filters.Filter) interfaces.Update
 
 func (plan *AssignQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *AssignQueryPlan) InSubQuery(fieldPtr interface{}, subQuery filters.SubQuery) interfaces.UpdateQuery {
+	plan.QueryPlan.InSubQuery(fieldPtr, subQuery)
 	return plan
 }
 

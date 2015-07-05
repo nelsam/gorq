@@ -2,6 +2,7 @@ package filters
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 )
 
@@ -91,9 +92,6 @@ func (filter *OrFilter) Where(values ...string) string {
 }
 
 // An InFilter is a filter for value IN (list_of_values).
-//
-// TODO: InFilter should also support sub-selects, but it currently
-// only supports lists of values.
 type InFilter struct {
 	expression interface{}
 	valueList  []interface{}
@@ -110,6 +108,36 @@ func (filter *InFilter) ActualValues() []interface{} {
 
 func (filter *InFilter) Where(values ...string) string {
 	return values[0] + " IN (" + strings.Join(values[1:], ", ") + ")"
+}
+
+// A SubQuery is a type that can be used as a SubQuery in an
+// InSubQueryFilter.
+type SubQuery interface {
+	Query(bindArgs ...string) string
+	Args() []interface{}
+}
+
+// InSubQueryFilter is like an InFilter, but takes a SubQuery instead
+// of a list of values.
+type InSubQueryFilter struct {
+	expression interface{}
+	subQuery   SubQuery
+}
+
+// ActualValues implements Filter.ActualValues.
+func (filter *InSubQueryFilter) ActualValues() []interface{} {
+	subArgs := filter.subQuery.Args()
+	values := make([]interface{}, 0, len(subArgs)+1)
+	values = append(values, filter.expression)
+	for _, arg := range subArgs {
+		values = append(values, arg)
+	}
+	return values
+}
+
+// Where implements Filter.Where.
+func (filter *InSubQueryFilter) Where(values ...string) string {
+	return fmt.Sprintf("%s IN (%s)", values[0], filter.subQuery.Query(values[1:]...))
 }
 
 // A JoinFilter is an AndFilter used for JOIN clauses and other forms
@@ -246,6 +274,14 @@ func In(fieldPtr interface{}, values ...interface{}) Filter {
 	return &InFilter{
 		expression: fieldPtr,
 		valueList:  values,
+	}
+}
+
+// InSubQuery returns a filter for fieldPtr IN (subQuery)
+func InSubQuery(fieldPtr interface{}, subQuery SubQuery) Filter {
+	return &InSubQueryFilter{
+		expression: fieldPtr,
+		subQuery:   subQuery,
 	}
 }
 

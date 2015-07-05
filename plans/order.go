@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-gorp/gorp"
 	"github.com/nelsam/gorq/filters"
 )
 
@@ -14,7 +13,7 @@ type order struct {
 	direction      string
 }
 
-func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int) (string, []interface{}, error) {
+func (o order) OrderBy(colMap structColumnMap) (string, []interface{}, error) {
 	var (
 		wrapper      filters.SqlWrapper
 		allFields    []interface{}
@@ -43,9 +42,8 @@ func (o order) OrderBy(dialect gorp.Dialect, colMap structColumnMap, bindIdx int
 			columnsAndFields = append(columnsAndFields, column)
 			fieldFound = true
 		} else {
-			columnsAndFields = append(columnsAndFields, dialect.BindVar(bindIdx))
+			columnsAndFields = append(columnsAndFields, BindVarPlaceholder)
 			params = append(params, field)
-			bindIdx++
 		}
 	}
 	if !fieldFound {

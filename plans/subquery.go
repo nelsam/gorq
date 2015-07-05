@@ -16,7 +16,6 @@ type subQuery interface {
 	getColMap() structColumnMap
 	errors() []error
 	selectQuery() (string, error)
-	getArgs() []interface{}
 }
 
 func (plan *QueryPlan) getTarget() reflect.Value {
@@ -29,10 +28,6 @@ func (plan *QueryPlan) getColMap() structColumnMap {
 
 func (plan *QueryPlan) errors() []error {
 	return plan.Errors
-}
-
-func (plan *QueryPlan) getArgs() []interface{} {
-	return plan.args
 }
 
 func (plan *QueryPlan) getTable() *gorp.TableMap {
