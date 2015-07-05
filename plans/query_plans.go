@@ -1,11 +1,9 @@
 package plans
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/go-gorp/gorp"
 	"github.com/nelsam/gorq/filters"
@@ -61,7 +59,6 @@ type QueryPlan struct {
 	groupBy        []string
 	limit          int64
 	offset         int64
-	args           []interface{}
 }
 
 // Extend returns an extended query, using extensions for the
@@ -124,11 +121,11 @@ func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan i
 }
 
 func (plan *QueryPlan) Join(target interface{}) interfaces.JoinQuery {
-	return plan.JoinType("inner", target)
+	return plan.JoinType("INNER", target)
 }
 
 func (plan *QueryPlan) LeftJoin(target interface{}) interfaces.JoinQuery {
-	return plan.JoinType("left outer", target)
+	return plan.JoinType("LEFT OUTER", target)
 }
 
 func (plan *QueryPlan) On(filters ...filters.Filter) interfaces.JoinQuery {
@@ -273,99 +270,49 @@ func (plan *QueryPlan) DiscardOffset() interfaces.SelectQuery {
 // will be returned if the field cannot be selected.  If the value is
 // used as an argument, it will be appended to args and the returned
 // string will be the bind value.
-func (plan *QueryPlan) argOrColumn(value interface{}) (sqlValue string, err error) {
+func (plan *QueryPlan) argOrColumn(currentArgCount int, value interface{}) (args []interface{}, sqlValue string, err error) {
 	switch src := value.(type) {
 	case filters.SqlWrapper:
-		value = src.ActualValue()
-		wrapperVal, err := plan.argOrColumn(value)
+		var wrapperVal string
+		args, wrapperVal, err = plan.argOrColumn(currentArgCount, value)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
-		return src.WrapSql(wrapperVal), nil
+		return args, src.WrapSql(wrapperVal), nil
 	case filters.MultiSqlWrapper:
 		values := src.ActualValues()
 		wrapperVals := make([]string, 0, len(values))
+		args := make([]interface{}, 0, len(values))
 		for _, val := range values {
-			wrapperVal, err := plan.argOrColumn(val)
+			newArgs, wrapperVal, err := plan.argOrColumn(currentArgCount+len(args), val)
 			if err != nil {
-				return "", err
+				return nil, "", err
 			}
 			wrapperVals = append(wrapperVals, wrapperVal)
+			args = append(args, newArgs...)
 		}
-		return src.WrapSql(wrapperVals...), nil
+		return args, src.WrapSql(wrapperVals...), nil
 	default:
 		if reflect.TypeOf(value).Kind() == reflect.Ptr {
 			sqlValue, err = plan.colMap.LocateTableAndColumn(value)
 		} else {
-			plan.args = append(plan.args, value)
-			sqlValue = plan.dbMap.Dialect.BindVar(len(plan.args))
+			sqlValue = plan.dbMap.Dialect.BindVar(currentArgCount + len(args))
+			args = append(args, value)
 		}
 	}
 	return
 }
 
-func (plan *QueryPlan) whereClause() (string, error) {
-	if plan.filters == nil {
-		return "", nil
-	}
-	whereArgs := plan.filters.ActualValues()
-	whereVals := make([]string, 0, len(whereArgs))
-	for _, arg := range whereArgs {
-		val, err := plan.argOrColumn(arg)
-		if err != nil {
-			return "", err
-		}
-		whereVals = append(whereVals, val)
-	}
-	where := plan.filters.Where(whereVals...)
-
-	if where != "" {
-		plan.args = append(plan.args, whereArgs...)
-		return " where " + where, nil
-	}
-	return "", nil
-}
-
-func (plan *QueryPlan) selectJoinClause() (string, error) {
-	buffer := bytes.Buffer{}
-	for _, join := range plan.joins {
-		joinArgs := join.ActualValues()
-		joinVals := make([]string, 0, len(joinArgs))
-		for _, arg := range joinArgs {
-			val, err := plan.argOrColumn(arg)
-			if err != nil {
-				return "", err
-			}
-			joinVals = append(joinVals, val)
-		}
-		joinClause := join.JoinClause(joinVals...)
-
-		buffer.WriteString(joinClause)
-		plan.args = append(plan.args, joinArgs...)
-	}
-	return buffer.String(), nil
-}
-
-func (plan *QueryPlan) resetArgs() {
-	plan.args = nil
-	if len(plan.assignArgs) > 0 {
-		plan.args = append(plan.args, plan.assignArgs...)
-	}
-	if subQuery, ok := plan.target.Interface().(subQuery); ok {
-		plan.args = append(plan.args, subQuery.getArgs()...)
-	}
-}
-
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
 func (plan *QueryPlan) Truncate() error {
-	query := fmt.Sprintf("truncate table %s", plan.QuotedTable())
+	query := fmt.Sprintf("TRUNCATE TABLE %s", plan.QuotedTable())
 	_, err := plan.dbMap.Exec(query)
 	return err
 }
 
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
-	query, err := plan.selectQuery()
+	statement, err := plan.SelectStatement()
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +320,7 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	if subQuery, ok := target.(subQuery); ok {
 		target = subQuery.getTarget().Interface()
 	}
-	return plan.executor.Select(target, query, plan.args...)
+	return plan.executor.Select(target, statement.query.String(), statement.args...)
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -383,22 +330,21 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if targetType.Kind() != reflect.Ptr || targetType.Elem().Kind() != reflect.Slice {
 		return errors.New("SelectToTarget must be run with a pointer to a slice as its target")
 	}
-	query, err := plan.selectQuery()
+	statement, err := plan.SelectStatement()
 	if err != nil {
 		return err
 	}
-	_, err = plan.executor.Select(target, query, plan.args...)
+	_, err = plan.executor.Select(target, statement.query.String(), statement.args...)
 	return err
 }
 
 func (plan *QueryPlan) Count() (int64, error) {
-	plan.resetArgs()
-	buffer := new(bytes.Buffer)
-	buffer.WriteString("select count(*)")
-	if err := plan.writeSelectSuffix(buffer); err != nil {
+	statement := new(Statement)
+	statement.query.WriteString("SELECT COUNT(*)")
+	if err := plan.addSelectSuffix(statement); err != nil {
 		return -1, err
 	}
-	return plan.executor.SelectInt(buffer.String(), plan.args...)
+	return plan.executor.SelectInt(statement.query.String(), statement.args...)
 }
 
 func (plan *QueryPlan) QuotedTable() string {
@@ -408,188 +354,55 @@ func (plan *QueryPlan) QuotedTable() string {
 	return plan.quotedTable
 }
 
-func (plan *QueryPlan) selectQuery() (string, error) {
-	plan.resetArgs()
-	buffer := new(bytes.Buffer)
-	if err := plan.writeSelectColumns(buffer); err != nil {
-		return "", err
-	}
-	if err := plan.writeSelectSuffix(buffer); err != nil {
-		return "", err
-	}
-	return buffer.String(), nil
-}
-
-func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
-	if len(plan.Errors) > 0 {
-		return plan.Errors[0]
-	}
-	buffer.WriteString("select ")
-	for index, col := range plan.table.Columns {
-		if !col.Transient {
-			if index != 0 {
-				buffer.WriteString(",")
-			}
-			buffer.WriteString(plan.QuotedTable())
-			buffer.WriteString(".")
-			buffer.WriteString(plan.dbMap.Dialect.QuoteField(col.ColumnName))
-		}
-	}
-	return nil
-}
-
-func (plan *QueryPlan) writeSelectSuffix(buffer *bytes.Buffer) error {
-	plan.storeJoin()
-	buffer.WriteString(" from ")
-	buffer.WriteString(plan.QuotedTable())
-	joinClause, err := plan.selectJoinClause()
-	if err != nil {
-		return err
-	}
-	buffer.WriteString(joinClause)
-	whereClause, err := plan.whereClause()
-	if err != nil {
-		return err
-	}
-	buffer.WriteString(whereClause)
-	for index, orderBy := range plan.orderBy {
-		if index == 0 {
-			buffer.WriteString(" order by ")
-		} else {
-			buffer.WriteString(", ")
-		}
-		orderStr, args, err := orderBy.OrderBy(plan.dbMap.Dialect, plan.colMap, len(plan.args))
-		if err != nil {
-			return err
-		}
-		buffer.WriteString(orderStr)
-		plan.args = append(plan.args, args...)
-	}
-	for index, groupBy := range plan.groupBy {
-		if index == 0 {
-			buffer.WriteString(" group by ")
-		} else {
-			buffer.WriteString(", ")
-		}
-		buffer.WriteString(groupBy)
-	}
-	// Nonstandard LIMIT clauses seem to have to come *before* the
-	// offset clause.
-	limiter, nonstandard := plan.dbMap.Dialect.(interfaces.NonstandardLimiter)
-	if plan.limit > 0 && nonstandard {
-		buffer.WriteString(" ")
-		buffer.WriteString(limiter.Limit(plan.dbMap.Dialect.BindVar(len(plan.args))))
-		plan.args = append(plan.args, plan.limit)
-	}
-	if plan.offset > 0 {
-		buffer.WriteString(" offset ")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.offset)
-	}
-	// Standard FETCH NEXT (n) ROWS ONLY must come after the offset.
-	if plan.limit > 0 && !nonstandard {
-		// Many dialects seem to ignore the SQL standard when it comes
-		// to the limit clause.
-		buffer.WriteString(" fetch next (")
-		buffer.WriteString(plan.dbMap.Dialect.BindVar(len(plan.args)))
-		plan.args = append(plan.args, plan.limit)
-		buffer.WriteString(") rows only")
-	}
-	return nil
-}
-
 // Insert will run this query plan as an INSERT statement.
 func (plan *QueryPlan) Insert() error {
-	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
-	buffer.WriteString("insert into ")
-	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
-	buffer.WriteString(" (")
+	statement := new(Statement)
+	statement.query.WriteString("INSERT INTO ")
+	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
+	statement.query.WriteString(" (")
 	for i, col := range plan.assignCols {
 		if i > 0 {
-			buffer.WriteString(", ")
+			statement.query.WriteString(", ")
 		}
-		buffer.WriteString(col)
+		statement.query.WriteString(col)
 	}
-	buffer.WriteString(") values (")
+	statement.query.WriteString(") VALUES (")
 	for i, bindVar := range plan.assignBindVars {
 		if i > 0 {
-			buffer.WriteString(", ")
+			statement.query.WriteString(", ")
 		}
-		buffer.WriteString(bindVar)
+		statement.query.WriteString(bindVar)
 	}
-	buffer.WriteString(")")
-	_, err := plan.executor.Exec(buffer.String(), plan.args...)
+	statement.query.WriteString(")")
+	_, err := plan.executor.Exec(statement.query.String(), statement.args...)
 	return err
-}
-
-// joinFromAndWhereClause will return the from and where clauses for
-// joined tables, for use in UPDATE and DELETE statements.
-func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) {
-	fromSlice := make([]string, 0, len(plan.joins))
-	whereBuffer := bytes.Buffer{}
-	for _, join := range plan.joins {
-		fromSlice = append(fromSlice, join.QuotedJoinTable)
-		whereArgs := join.ActualValues()
-		whereVals := make([]string, 0, len(whereArgs))
-		for _, arg := range whereArgs {
-			val, err := plan.argOrColumn(arg)
-			if err != nil {
-				return "", "", err
-			}
-			whereVals = append(whereVals, val)
-		}
-		whereClause := join.Where(whereVals...)
-		whereBuffer.WriteString(whereClause)
-		plan.args = append(plan.args, whereArgs...)
-	}
-	return strings.Join(fromSlice, ", "), whereBuffer.String(), nil
 }
 
 // Update will run this query plan as an UPDATE statement.
 func (plan *QueryPlan) Update() (int64, error) {
-	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
-	buffer.WriteString("update ")
-	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
-	buffer.WriteString(" set ")
+	statement := new(Statement)
+	statement.query.WriteString("UPDATE ")
+	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
+	statement.query.WriteString(" SET ")
 	for i, col := range plan.assignCols {
 		bindVar := plan.assignBindVars[i]
 		if i > 0 {
-			buffer.WriteString(", ")
+			statement.query.WriteString(", ")
 		}
-		buffer.WriteString(col)
-		buffer.WriteString("=")
-		buffer.WriteString(bindVar)
+		statement.query.WriteString(col)
+		statement.query.WriteString("=")
+		statement.query.WriteString(bindVar)
 	}
-	joinTables, joinWhereClause, err := plan.joinFromAndWhereClause()
-	if err != nil {
-		return -1, nil
-	}
-	if joinTables != "" {
-		buffer.WriteString(" from ")
-		buffer.WriteString(joinTables)
-	}
-	whereClause, err := plan.whereClause()
-	if err != nil {
+	if err := plan.addWhereClause(statement); err != nil {
 		return -1, err
 	}
-	if joinWhereClause != "" {
-		if whereClause == "" {
-			whereClause = " where "
-		} else {
-			whereClause += " and "
-		}
-		whereClause += joinWhereClause
-	}
-	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(statement.query.String(), statement.args...)
 	if err != nil {
 		return -1, err
 	}
@@ -602,35 +415,16 @@ func (plan *QueryPlan) Update() (int64, error) {
 
 // Delete will run this query plan as a DELETE statement.
 func (plan *QueryPlan) Delete() (int64, error) {
-	plan.resetArgs()
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
-	buffer.WriteString("delete from ")
-	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
-	joinTables, joinWhereClause, err := plan.joinFromAndWhereClause()
-	if err != nil {
+	statement := new(Statement)
+	statement.query.WriteString("DELETE FROM ")
+	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
+	if err := plan.addWhereClause(statement); err != nil {
 		return -1, err
 	}
-	if joinTables != "" {
-		buffer.WriteString(" using ")
-		buffer.WriteString(joinTables)
-	}
-	whereClause, err := plan.whereClause()
-	if err != nil {
-		return -1, err
-	}
-	if joinWhereClause != "" {
-		if whereClause == "" {
-			whereClause = " where "
-		} else {
-			whereClause += " and "
-		}
-		whereClause += joinWhereClause
-	}
-	buffer.WriteString(whereClause)
-	res, err := plan.executor.Exec(buffer.String(), plan.args...)
+	res, err := plan.executor.Exec(statement.query.String(), statement.args...)
 	if err != nil {
 		return -1, err
 	}
@@ -726,7 +520,7 @@ func (plan *AssignQueryPlan) Assign(fieldPtr interface{}, value interface{}) int
 		return plan
 	}
 	plan.assignCols = append(plan.assignCols, column)
-	plan.assignBindVars = append(plan.assignBindVars, plan.dbMap.Dialect.BindVar(len(plan.args)))
+	plan.assignBindVars = append(plan.assignBindVars, plan.dbMap.Dialect.BindVar(len(plan.assignBindVars)))
 	plan.assignArgs = append(plan.assignArgs, value)
 	return plan
 }
