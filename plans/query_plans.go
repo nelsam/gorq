@@ -407,7 +407,9 @@ func (plan *QueryPlan) Update() (int64, error) {
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
-	statement := new(Statement)
+	statement := &Statement{
+		args: plan.assignArgs,
+	}
 	statement.query.WriteString("UPDATE ")
 	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	statement.query.WriteString(" SET ")
