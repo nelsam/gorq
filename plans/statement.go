@@ -2,7 +2,7 @@ package plans
 
 import (
 	"bytes"
-	"fmt"
+	"strings"
 
 	"github.com/nelsam/gorq/interfaces"
 )
@@ -15,8 +15,12 @@ type Statement struct {
 
 // Query returns the query string for s, replacing bound argument
 // placeholders with bindArgs.
-func (s *Statement) Query(bindArgs ...string) string {
-	return fmt.Sprintf(s.query.String(), s.args...)
+func (s *Statement) Query(bindVars ...string) string {
+	query := s.query.String()
+	for _, v := range bindVars {
+		query = strings.Replace(query, BindVarPlaceholder, v, 1)
+	}
+	return query
 }
 
 // Args returns the arguments for s.
