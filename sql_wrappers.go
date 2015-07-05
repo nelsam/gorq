@@ -33,7 +33,16 @@ func (wrapper functionWrapper) WrapSql(sqlValue string) string {
 func Lower(value interface{}) filters.SqlWrapper {
 	return functionWrapper{
 		actualValue:  value,
-		functionName: "lower",
+		functionName: "LOWER",
+	}
+}
+
+// Count returns a filters.SqlWrapper that wraps the passed in value
+// in an sql count() call.
+func Count(value interface{}) filters.SqlWrapper {
+	return functionWrapper{
+		actualValue:  value,
+		functionName: "COUNT",
 	}
 }
 
