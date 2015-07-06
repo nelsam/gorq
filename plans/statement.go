@@ -124,11 +124,11 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 		} else {
 			statement.query.WriteString(", ")
 		}
-		orderStr, args, err := orderBy.OrderBy(plan.colMap)
+		args, val, err := plan.argOrColumn(orderBy.ActualValue())
 		if err != nil {
 			return err
 		}
-		statement.query.WriteString(orderStr)
+		statement.query.WriteString(orderBy.OrderBy(val))
 		statement.args = append(statement.args, args...)
 	}
 	for index, groupBy := range plan.groupBy {
