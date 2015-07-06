@@ -118,6 +118,14 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 	if err := plan.addWhereClause(statement); err != nil {
 		return err
 	}
+	for index, groupBy := range plan.groupBy {
+		if index == 0 {
+			statement.query.WriteString(" GROUP BY ")
+		} else {
+			statement.query.WriteString(", ")
+		}
+		statement.query.WriteString(groupBy)
+	}
 	for index, orderBy := range plan.orderBy {
 		if index == 0 {
 			statement.query.WriteString(" ORDER BY ")
@@ -130,14 +138,6 @@ func (plan *QueryPlan) addSelectSuffix(statement *Statement) error {
 		}
 		statement.query.WriteString(orderBy.OrderBy(val))
 		statement.args = append(statement.args, args...)
-	}
-	for index, groupBy := range plan.groupBy {
-		if index == 0 {
-			statement.query.WriteString(" GROUP BY ")
-		} else {
-			statement.query.WriteString(", ")
-		}
-		statement.query.WriteString(groupBy)
 	}
 	// Nonstandard LIMIT clauses seem to have to come *before* the
 	// offset clause.
