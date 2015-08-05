@@ -33,7 +33,7 @@ func (wrapper functionWrapper) WrapSql(sqlValue string) string {
 func Lower(value interface{}) filters.SqlWrapper {
 	return functionWrapper{
 		actualValue:  value,
-		functionName: "LOWER",
+		functionName: "lower",
 	}
 }
 

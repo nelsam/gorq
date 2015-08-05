@@ -10,6 +10,6 @@ import (
 func TestLower(t *testing.T) {
 	val := "Test"
 	wrapper := Lower(val)
-	assert.Equal(t, wrapper.ActualValue(), val)
-	assert.Equal(t, wrapper.WrapSql(val), fmt.Sprintf("lower(%s)", val))
+	assert.Equal(t, val, wrapper.ActualValue())
+	assert.Equal(t, fmt.Sprintf("lower(%s)", val), wrapper.WrapSql(val))
 }
