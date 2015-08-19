@@ -54,6 +54,9 @@ type Selector interface {
 	// Count executes a select statement that just returns a count of
 	// the number of rows that would be returned.
 	Count() (int64, error)
+
+	// Distinct adds the DISTINCT keyword to the resulting SELECT statement
+	Distinct()
 }
 
 // A SelectManipulator is a query that will return a list of results

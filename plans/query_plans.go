@@ -113,6 +113,7 @@ type QueryPlan struct {
 	cache           interfaces.Cache
 	cachingDisabled bool
 	tables          []*gorp.TableMap
+	distinct        bool
 }
 
 // Query generates a Query for a target model.  The target that is
@@ -868,6 +869,11 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 	return res, nil
 }
 
+// Distinct will make this query return only DISTINCT results
+func (plan *QueryPlan) Distinct() {
+	plan.distinct = true
+}
+
 func (plan *QueryPlan) toCacheFormat(cacheVal reflect.Value) []interface{} {
 	if cacheVal.Kind() != reflect.Slice {
 		return nil
@@ -1047,6 +1053,9 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 		return plan.Errors[0]
 	}
 	buffer.WriteString("select ")
+	if plan.distinct {
+		buffer.WriteString("distinct ")
+	}
 	for index, m := range plan.colMap {
 		if m.doSelect {
 			if index != 0 {
