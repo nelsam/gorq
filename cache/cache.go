@@ -3,8 +3,8 @@ package cache
 import (
 	"sync"
 
-	"github.com/memcachier/mc"
 	"github.com/outdoorsy/gorp"
+	"github.com/outdoorsy/mc"
 )
 
 const defaultCacheExpirationTime = 604800 // one week
@@ -44,7 +44,7 @@ func (t tableKeys) drop(table *gorp.TableMap) {
 
 // Memcachier is a gorq.Cache using github.com/memcachier/mc.
 type Memcachier struct {
-	Conn          *mc.Conn
+	Conn          mc.Cacher
 	cacheables    map[*gorp.TableMap]bool
 	keys          tableKeys
 	relationships map[*gorp.TableMap][]*gorp.TableMap
