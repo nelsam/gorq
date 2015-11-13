@@ -3,7 +3,14 @@ package filters
 import (
 	"bytes"
 	"strings"
+	"sync"
 )
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
 
 // A TableAndColumnLocater takes a struct field reference and returns
 // the column for that field, complete with table name.
@@ -46,7 +53,8 @@ func (filter *CombinedFilter) ActualValues() []interface{} {
 }
 
 func (filter *CombinedFilter) where(separator string, values ...string) string {
-	buf := bytes.Buffer{}
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
 	if len(filter.subFilters) > 1 {
 		buf.WriteString("(")
 	}
@@ -62,7 +70,9 @@ func (filter *CombinedFilter) where(separator string, values ...string) string {
 	if len(filter.subFilters) > 1 {
 		buf.WriteString(")")
 	}
-	return buf.String()
+	s := buf.String()
+	bufPool.Put(buf)
+	return s
 }
 
 // Add adds one or more filters to the slice of sub-filters.

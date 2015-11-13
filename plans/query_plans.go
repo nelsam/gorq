@@ -16,6 +16,12 @@ import (
 	"github.com/outdoorsy/gorq/interfaces"
 )
 
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
 type tableAlias struct {
 	*gorp.TableMap
 	quotedFromClause string
@@ -725,7 +731,8 @@ func (plan *QueryPlan) whereClause() (string, error) {
 }
 
 func (plan *QueryPlan) selectJoinClause() (string, error) {
-	buffer := bytes.Buffer{}
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
 	for _, join := range plan.joins {
 		buffer.WriteString(" ")
 		joinArgs := join.ActualValues()
@@ -733,6 +740,7 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 		for _, arg := range joinArgs {
 			val, err := plan.argOrColumn(arg)
 			if err != nil {
+				bufPool.Put(buffer)
 				return "", err
 			}
 			joinVals = append(joinVals, val)
@@ -740,7 +748,9 @@ func (plan *QueryPlan) selectJoinClause() (string, error) {
 		joinClause := join.JoinClause(joinVals...)
 		buffer.WriteString(joinClause)
 	}
-	return buffer.String(), nil
+	s := buffer.String()
+	bufPool.Put(buffer)
+	return s, nil
 }
 
 // Truncate will run this query plan as a TRUNCATE TABLE statement.
@@ -978,12 +988,16 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 
 func (plan *QueryPlan) Count() (int64, error) {
 	plan.resetArgs()
-	buffer := new(bytes.Buffer)
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
 	buffer.WriteString("select count(*)")
 	if err := plan.writeSelectSuffix(buffer); err != nil {
+		bufPool.Put(buffer)
 		return -1, err
 	}
-	return plan.executor.SelectInt(buffer.String(), plan.getArgs()...)
+	s := buffer.String()
+	bufPool.Put(buffer)
+	return plan.executor.SelectInt(s, plan.getArgs()...)
 }
 
 func (plan *QueryPlan) QuotedTable() string {
@@ -995,14 +1009,19 @@ func (plan *QueryPlan) QuotedTable() string {
 
 func (plan *QueryPlan) selectQuery() (string, error) {
 	plan.resetArgs()
-	buffer := new(bytes.Buffer)
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
 	if err := plan.writeSelectColumns(buffer); err != nil {
+		bufPool.Put(buffer)
 		return "", err
 	}
 	if err := plan.writeSelectSuffix(buffer); err != nil {
+		bufPool.Put(buffer)
 		return "", err
 	}
-	return buffer.String(), nil
+	s := buffer.String()
+	bufPool.Put(buffer)
+	return s, nil
 }
 
 // argOrColumn returns the string that should be used to represent a
@@ -1166,7 +1185,8 @@ func (plan *QueryPlan) Insert() error {
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
 	buffer.WriteString("insert into ")
 	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	buffer.WriteString(" (")
@@ -1184,7 +1204,9 @@ func (plan *QueryPlan) Insert() error {
 		buffer.WriteString(bindVar)
 	}
 	buffer.WriteString(")")
-	_, err := plan.executor.Exec(buffer.String(), plan.getArgs()...)
+	s := buffer.String()
+	bufPool.Put(buffer)
+	_, err := plan.executor.Exec(s, plan.getArgs()...)
 
 	if plan.cache != nil && !plan.cachingDisabled {
 		go plan.cache.DropEntries(plan.tables)
@@ -1197,7 +1219,8 @@ func (plan *QueryPlan) Insert() error {
 // joined tables, for use in UPDATE and DELETE statements.
 func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) {
 	fromSlice := make([]string, 0, len(plan.joins))
-	whereBuffer := bytes.Buffer{}
+	whereBuffer := bufPool.Get().(*bytes.Buffer)
+	whereBuffer.Reset()
 	for _, join := range plan.joins {
 		fromSlice = append(fromSlice, join.QuotedJoinTable)
 		whereArgs := join.ActualValues()
@@ -1205,17 +1228,21 @@ func (plan *QueryPlan) joinFromAndWhereClause() (from, where string, err error) 
 		for _, arg := range whereArgs {
 			val, err := plan.argOrColumn(arg)
 			if err != nil {
+				bufPool.Put(whereBuffer)
 				return "", "", err
 			}
 			whereVals = append(whereVals, val)
 		}
 		whereClause := join.Where(whereVals...)
 		if err != nil {
+			bufPool.Put(whereBuffer)
 			return "", "", err
 		}
 		whereBuffer.WriteString(whereClause)
 	}
-	return strings.Join(fromSlice, ", "), whereBuffer.String(), nil
+	s := whereBuffer.String()
+	bufPool.Put(whereBuffer)
+	return strings.Join(fromSlice, ", "), s, nil
 }
 
 // Update will run this query plan as an UPDATE statement.
@@ -1224,7 +1251,9 @@ func (plan *QueryPlan) Update() (int64, error) {
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
+	defer bufPool.Put(buffer)
 	buffer.WriteString("update ")
 	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	buffer.WriteString(" set ")
@@ -1280,7 +1309,9 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	if len(plan.Errors) > 0 {
 		return -1, plan.Errors[0]
 	}
-	buffer := bytes.Buffer{}
+	buffer := bufPool.Get().(*bytes.Buffer)
+	buffer.Reset()
+	defer bufPool.Put(buffer)
 	buffer.WriteString("delete from ")
 	buffer.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	joinTables, joinWhereClause, err := plan.joinFromAndWhereClause()
