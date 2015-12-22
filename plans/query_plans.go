@@ -2,10 +2,8 @@ package plans
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -97,35 +95,33 @@ type QueryPlan struct {
 	// returned immediately.
 	Errors []error
 
-	table           *gorp.TableMap
-	dbMap           *gorp.DbMap
-	quotedTable     string
-	executor        gorp.SqlExecutor
-	target          reflect.Value
-	colMap          structColumnMap
-	joins           []*filters.JoinFilter
-	lastRefs        []filters.Filter
-	assignCols      []string
-	assignBindVars  []string
-	assignArgs      []interface{}
-	filters         filters.MultiFilter
-	orderBy         []order
-	groupBy         []string
-	limit           int64
-	offset          int64
-	args            []interface{}
-	argLen          int
-	argLock         sync.RWMutex
-	cache           interfaces.Cache
-	cachingDisabled bool
-	tables          []*gorp.TableMap
-	distinct        bool
+	table          *gorp.TableMap
+	dbMap          *gorp.DbMap
+	quotedTable    string
+	executor       gorp.SqlExecutor
+	target         reflect.Value
+	colMap         structColumnMap
+	joins          []*filters.JoinFilter
+	lastRefs       []filters.Filter
+	assignCols     []string
+	assignBindVars []string
+	assignArgs     []interface{}
+	filters        filters.MultiFilter
+	orderBy        []order
+	groupBy        []string
+	limit          int64
+	offset         int64
+	args           []interface{}
+	argLen         int
+	argLock        sync.RWMutex
+	tables         []*gorp.TableMap
+	distinct       bool
 }
 
 // Query generates a Query for a target model.  The target that is
 // passed in must be a pointer to a struct, and will be used as a
 // reference for query construction.
-func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache interfaces.Cache, cachingDisabled bool, joinOps ...JoinOp) interfaces.Query {
+func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, joinOps ...JoinOp) interfaces.Query {
 	// Handle non-standard dialects
 	switch src := m.Dialect.(type) {
 	case gorp.MySQLDialect:
@@ -135,10 +131,8 @@ func Query(m *gorp.DbMap, exec gorp.SqlExecutor, target interface{}, cache inter
 	default:
 	}
 	plan := &QueryPlan{
-		dbMap:           m,
-		executor:        exec,
-		cache:           cache,
-		cachingDisabled: cachingDisabled,
+		dbMap:    m,
+		executor: exec,
 	}
 
 	targetVal := reflect.ValueOf(target)
@@ -760,108 +754,11 @@ func (plan *QueryPlan) Truncate() error {
 	return err
 }
 
-func (plan *QueryPlan) unmarshalCachedResults(cached []interface{}, resultSlice reflect.Value, elementType reflect.Type) error {
-	for _, res := range cached {
-		resMap := res.(map[string]interface{})
-		// Make sure newTarget is settable by creating a pointer to it
-		// and getting the Elem().
-		newTarget := reflect.New(elementType).Elem()
-		if newTarget.Kind() == reflect.Ptr {
-			newTarget.Set(reflect.New(elementType.Elem()))
-		}
-		for alias, value := range resMap {
-			if err := plan.setField(newTarget, alias, value); err != nil {
-				return err
-			}
-		}
-		resultSlice.Set(reflect.Append(resultSlice, newTarget))
-	}
-	return nil
-}
-
-func (plan *QueryPlan) setField(target reflect.Value, alias string, value interface{}) error {
-	var col *fieldColumnMap
-	for _, col = range plan.colMap {
-		if col.alias == alias {
-			break
-		}
-	}
-	if col == nil {
-		return fmt.Errorf("Cannot find field matching alias %s", alias)
-	}
-	field := fieldByIndex(target, col.column.FieldIndex())
-	v := reflect.ValueOf(value)
-	if field.Kind() == reflect.Slice {
-		return plan.unmarshalCachedResults(value.([]interface{}), field, field.Type().Elem())
-	}
-	if !v.Type().ConvertibleTo(field.Type()) {
-		return fmt.Errorf("Cannot convert type %v to type %v", v.Type(), field.Type())
-	}
-	field.Set(v.Convert(field.Type()))
-	return nil
-}
-
-// cachedSelect will load data from cache for the current query.  If
-// target is a pointer to a slice, data will be appended to it;
-// otherwise, cachedSelect will return a []interface{} containing
-// elements of the same type as target.
-//
-// The return value will be nil if there is nothing in cache for this
-// query, or if there are errors while creating the return value.
-func (plan *QueryPlan) cachedSelect(target reflect.Value, query string) []interface{} {
-	if plan.cache == nil || !plan.cache.Cacheable(plan.table) {
-		return nil
-	}
-	key, err := CacheKey(query, plan.getArgs())
-	if err != nil {
-		return nil
-	}
-	result, err := plan.cache.Get(key)
-	if err != nil || result == "" {
-		return nil
-	}
-
-	cached, err := restoreFromCache(result)
-	if err != nil {
-		return nil
-	}
-
-	var results []interface{}
-	targetType := target.Type()
-	var selectTarget reflect.Value
-	if targetType.Kind() == reflect.Ptr && targetType.Elem().Kind() == reflect.Slice {
-		selectTarget = target.Elem()
-		targetType = targetType.Elem().Elem()
-
-		// results still needs to be non-nil for the return value, but
-		// there's no point in taking up a bunch of extra memory.
-		results = []interface{}{}
-	} else {
-		// Currently, this case is only hit when Select() is called,
-		// which will send us the original query target, which
-		// *should* be a pointer to a struct.  And that is perfectly
-		// valid as targetType.
-
-		results = make([]interface{}, 0, len(cached))
-		selectTarget = reflect.ValueOf(&results)
-	}
-	if err := plan.unmarshalCachedResults(cached, selectTarget, targetType); err != nil {
-		return nil
-	}
-	return results
-}
-
 // Select will run this query plan as a SELECT statement.
 func (plan *QueryPlan) Select() ([]interface{}, error) {
 	query, err := plan.selectQuery()
 	if err != nil {
 		return nil, err
-	}
-
-	if !plan.cachingDisabled {
-		if result := plan.cachedSelect(plan.target, query); result != nil {
-			return result, nil
-		}
 	}
 
 	target := plan.target.Interface()
@@ -873,88 +770,12 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 		return nil, err
 	}
 
-	if plan.cache != nil && plan.cache.Cacheable(plan.table) && !plan.cachingDisabled {
-		plan.cacheResults(res, query)
-	}
 	return res, nil
 }
 
 // Distinct will make this query return only DISTINCT results
 func (plan *QueryPlan) Distinct() {
 	plan.distinct = true
-}
-
-func (plan *QueryPlan) toCacheFormat(cacheVal reflect.Value) []interface{} {
-	if cacheVal.Kind() != reflect.Slice {
-		return nil
-	}
-	cacheData := make([]interface{}, 0, cacheVal.Len())
-	if cacheVal.Len() == 0 {
-		return cacheData
-	}
-	// We're guaranteed to have at least one element, here.
-	src := cacheVal.Index(0)
-	for src.Kind() == reflect.Interface || src.Kind() == reflect.Ptr {
-		src = src.Elem()
-	}
-	srcType := src.Type()
-	cacheMap := &cacheMapping{}
-	cacheMap.cacheType = srcType
-	for _, m := range plan.colMap {
-		if m.doSelect {
-			nested := []*fieldColumnMap{m}
-			for current := m.parentMap; current != nil; current = current.parentMap {
-				nested = append([]*fieldColumnMap{current}, nested...)
-			}
-			cacheMap.add(nested)
-		}
-	}
-	return cacheMap.valueFor(cacheVal).([]interface{})
-}
-
-// cacheResults stores a result slice in cache.  Any failures will be
-// silent.
-func (plan *QueryPlan) cacheResults(results interface{}, query string) {
-	defer func() {
-		// Don't let reflection panics propagate.
-		// if r := recover(); r != nil {
-		// 	log.Printf("Recovered from %v", r)
-		// }
-	}()
-
-	cacheVal := reflect.ValueOf(results)
-	if cacheVal.Kind() == reflect.Ptr {
-		cacheVal = cacheVal.Elem()
-	}
-	if cacheVal.Kind() != reflect.Slice {
-		return
-	}
-
-	key, err := CacheKey(query, plan.getArgs())
-	if err != nil {
-		return
-	}
-
-	cacheData := plan.toCacheFormat(cacheVal)
-	if cacheData == nil {
-		// We don't want to cache this.
-		return
-	}
-	// fmt.Println("about to encode to json: ", cacheData)
-	raw, err := json.Marshal(cacheData)
-	if err != nil {
-		log.Printf("Error from marshal: %v", err)
-		return
-	}
-
-	go func() {
-		encoded, err := prepareForCache(string(raw))
-		if err != nil {
-			log.Printf("Error from prepareForCache: %v", err)
-			return
-		}
-		plan.cache.Set(plan.tables, key, encoded)
-	}()
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -969,20 +790,12 @@ func (plan *QueryPlan) SelectToTarget(target interface{}) error {
 	if err != nil {
 		return err
 	}
-	if !plan.cachingDisabled {
-		if result := plan.cachedSelect(targetVal, query); result != nil {
-			// All results have been appended to target.
-			return nil
-		}
-	}
 
 	_, err = plan.executor.Select(target, query, plan.getArgs()...)
 	if err != nil {
 		return err
 	}
-	if plan.cache != nil && plan.cache.Cacheable(plan.table) && !plan.cachingDisabled {
-		plan.cacheResults(target, query)
-	}
+
 	return err
 }
 
@@ -1208,10 +1021,6 @@ func (plan *QueryPlan) Insert() error {
 	bufPool.Put(buffer)
 	_, err := plan.executor.Exec(s, plan.getArgs()...)
 
-	if plan.cache != nil && !plan.cachingDisabled {
-		go plan.cache.DropEntries(plan.tables)
-	}
-
 	return err
 }
 
@@ -1296,10 +1105,6 @@ func (plan *QueryPlan) Update() (int64, error) {
 		return -1, err
 	}
 
-	if plan.cache != nil && !plan.cachingDisabled {
-		go plan.cache.DropEntries(plan.tables)
-	}
-
 	return rows, nil
 }
 
@@ -1342,10 +1147,6 @@ func (plan *QueryPlan) Delete() (int64, error) {
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return -1, err
-	}
-
-	if plan.cache != nil && !plan.cachingDisabled {
-		go plan.cache.DropEntries(plan.tables)
 	}
 
 	return rows, nil
