@@ -12,6 +12,7 @@ script:
   - psql -U postgres -h 127.0.0.1 -c "create user gorptest password 'gorptest'"
   - psql -U postgres -h 127.0.0.1 -c "create database gorptest owner gorptest"
   -
+  - ./drone_go_version_update.sh
   - go version
   - go get -t ./...
   - go build ./...
