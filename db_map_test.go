@@ -20,7 +20,7 @@ type ValidStruct struct {
 
 type QueryTestSuite struct {
 	suite.Suite
-	Exec     SqlExecutor
+	Exec     gorq.SqlExecutor
 	TypeName string
 }
 
@@ -83,7 +83,7 @@ func (suite *DbMapTestSuite) SetupSuite() {
 func (suite *DbMapTestSuite) TestBegin() {
 	tx, err := suite.Exec.(*gorq.DbMap).Begin()
 	if suite.NoError(err) {
-		suite.IsType((*Transaction)(nil), tx)
+		suite.IsType((*gorq.Transaction)(nil), tx)
 	}
 }
 
@@ -99,7 +99,7 @@ func (suite *TransactionTestSuite) SetupSuite() {
 	suite.QueryTestSuite.SetupSuite()
 	suite.TypeName = "Transaction"
 	dbMap := suite.Exec.(*gorq.DbMap)
-	trans := new(gorq.Transaction)
-	trans.dbmap = dbMap
+	trans, err := dbMap.Begin()
+	suite.NoError(err)
 	suite.Exec = trans
 }
