@@ -16,10 +16,10 @@ services:
 env:
   global:
   - secure: "qo3SA5eaQxKt6q8Vrrsesdf+ajuqJtQyZp2IPoMGVqps2RZDQYssks6V3IRVuoa/q8lyOYxDmu6fSVHrkblJvrEVPiU+IGEvuSUOrOYtgKt8yCX79xIKYdnhOQ/5Y/J3A+XfiwGdVs/eWy0JbGwxNC9wscMXG+AeMzrl+9oxSm0="
-  - POSTGRES_TEST_URL: "user=gorptest password=gorptest dbname=gorptest host=localhost sslmode=disable"
-  - MY_MYSQL_TEST_URL: gorptest/root/
-  - MYSQL_TEST_URL: root@/gorptest
-  - SQLITE_TEST_URL: /tmp/gorptest.bin
+  - POSTGRES_TEST_URL="user=gorptest password=gorptest dbname=gorptest host=localhost sslmode=disable"
+  - MY_MYSQL_TEST_URL="gorptest/root/"
+  - MYSQL_TEST_URL="root@/gorptest"
+  - SQLITE_TEST_URL="/tmp/gorptest.bin"
 
 before_script:
 - mysql -u root -h 127.0.0.1 -e "create database gorptest"
