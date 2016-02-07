@@ -1,4 +1,4 @@
-package plans
+package plans_test
 
 import (
 	"database/sql"
@@ -14,6 +14,7 @@ import (
 	"github.com/nelsam/gorq/dialects"
 	"github.com/nelsam/gorq/filters"
 	"github.com/nelsam/gorq/interfaces"
+	"github.com/nelsam/gorq/plans"
 	"github.com/stretchr/testify/suite"
 	_ "github.com/ziutek/mymysql/godrv"
 )
@@ -189,7 +190,7 @@ func TestQueryPlanSqlite(t *testing.T) {
 }
 
 // TODO: DRY.  This is copied from ../db_map_test.go.
-func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *QueryPlan {
+func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *plans.QueryPlan {
 	var ptr, val interface{}
 	valueOfStruct := reflect.ValueOf(value)
 	if valueOfStruct.Kind() == reflect.Ptr {
@@ -200,15 +201,15 @@ func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *QueryPlan {
 		val = value
 	}
 
-	q := Query(suite.Map, suite.Map, val)
+	q := plans.Query(suite.Map, suite.Map, val)
 	suite.Implements((*interfaces.Query)(nil), q)
-	if plan, ok := q.(*QueryPlan); suite.True(ok) {
+	if plan, ok := q.(*plans.QueryPlan); suite.True(ok) {
 		suite.NotEqual(0, len(plan.Errors),
-			"Query(ref) should error if ref is not a pointer to a struct")
+			"plans.Query(ref) should error if ref is not a pointer to a struct")
 	}
 
-	q = Query(suite.Map, suite.Map, ptr)
-	plan, ok := q.(*QueryPlan)
+	q = plans.Query(suite.Map, suite.Map, ptr)
+	plan, ok := q.(*plans.QueryPlan)
 	if !suite.True(ok) {
 		suite.T().FailNow()
 	}
@@ -218,33 +219,33 @@ func (suite *QueryPlanTestSuite) getQueryPlanFor(value interface{}) *QueryPlan {
 func (suite *QueryPlanTestSuite) TestQueryPlan_EmptyStruct() {
 	q := suite.getQueryPlanFor(EmptyStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref) should generate errors if ref is an empty struct")
+		"plans.Query(ref) should generate errors if ref is an empty struct")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_InvalidStruct() {
 	q := suite.getQueryPlanFor(InvalidStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref) should generate errors if ref has no exported fields")
+		"plans.Query(ref) should generate errors if ref has no exported fields")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_OnlyTransient() {
 	q := suite.getQueryPlanFor(OnlyTransientFields{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref) should generate errors if ref has only transient fields")
+		"plans.Query(ref) should generate errors if ref has only transient fields")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_NonStruct() {
 	for _, val := range []interface{}{"Test", 1, 1.0} {
 		q := suite.getQueryPlanFor(val)
 		suite.NotEqual(0, len(q.Errors),
-			"Query(ref) should generate errors if ref is a non-struct type")
+			"plans.Query(ref) should generate errors if ref is a non-struct type")
 	}
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_UnmappedStruct() {
 	q := suite.getQueryPlanFor(UnmappedStruct{})
 	suite.NotEqual(0, len(q.Errors),
-		"Query(ref) should generate errors if ref has not yet been mapped")
+		"plans.Query(ref) should generate errors if ref has not yet been mapped")
 }
 
 func (suite *QueryPlanTestSuite) TestQueryPlan_NonFieldPtr() {
@@ -320,9 +321,9 @@ func (suite *QueryLanguageTestSuite) TearDownTest() {
 	switch suite.Map.Dialect.(type) {
 	case dialects.SqliteDialect:
 		// SQLite3 doesn't have a TRUNCATE TABLE command.
-		_, err = Query(suite.Map, suite.Map, suite.Ref).Delete()
+		_, err = plans.Query(suite.Map, suite.Map, suite.Ref).Delete()
 	default:
-		err = Query(suite.Map, suite.Map, suite.Ref).Truncate()
+		err = plans.Query(suite.Map, suite.Map, suite.Ref).Truncate()
 	}
 	if !suite.NoError(err) {
 		suite.T().FailNow()
@@ -338,7 +339,7 @@ func (suite *QueryLanguageTestSuite) insertInvoices() {
 		return
 	}
 	for _, inv := range testInvoices {
-		err := Query(suite.Map, suite.Map, suite.Ref).
+		err := plans.Query(suite.Map, suite.Map, suite.Ref).
 			Assign(&suite.Ref.Id, inv.Id).
 			Assign(&suite.Ref.Created, inv.Created).
 			Assign(&suite.Ref.Updated, inv.Updated).
@@ -365,16 +366,16 @@ func (suite *QueryLanguageTestSuite) expectedLength(matcherFunc func(OverriddenI
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_TransientField() {
-	q := Query(suite.Map, suite.Map, suite.Ref).
+	q := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Assign(&suite.Ref.TransientId, "Test")
-	suite.NotEqual(0, len(q.(*AssignQueryPlan).Errors),
+	suite.NotEqual(0, len(q.(*plans.AssignQueryPlan).Errors),
 		"Transient fields should generate errors when used as columns")
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_UnexportedField() {
-	q := Query(suite.Map, suite.Map, suite.Ref).
+	q := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Assign(&suite.Ref.unexportedId, "Test")
-	suite.NotEqual(0, len(q.(*AssignQueryPlan).Errors),
+	suite.NotEqual(0, len(q.(*plans.AssignQueryPlan).Errors),
 		"Unexported fields should generate errors when used as columns")
 }
 
@@ -391,7 +392,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 		}
 	}
 
-	count, err := Query(suite.Map, suite.Map, suite.Ref).
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Assign(&suite.Ref.IsPaid, true).
 		Where().
 		Equal(&suite.Ref.Id, targetInv.Id).
@@ -401,7 +402,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 		isPaidCount += count
 	}
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		True(&suite.Ref.IsPaid).
 		Select()
@@ -411,21 +412,21 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectSimple() {
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).Select()
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).Select()
 	if suite.NoError(err) {
 		suite.Equal(len(testInvoices), len(invTest))
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountSimple() {
-	count, err := Query(suite.Map, suite.Map, suite.Ref).Count()
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).Count()
 	if suite.NoError(err) {
 		suite.Equal(len(testInvoices), count)
 	}
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_OrderBy_ASC() {
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "asc").Select()
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "asc").Select()
 	if suite.NoError(err) {
 		previous := invTest[0].(*OverriddenInvoice).Updated
 		for _, result := range invTest {
@@ -437,7 +438,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_OrderBy_ASC() {
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_OrderBy_DESC() {
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "DESC").Select()
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).OrderBy(&suite.Ref.Updated, "DESC").Select()
 	if suite.NoError(err) {
 		previous := invTest[0].(*OverriddenInvoice).Updated
 		for _, result := range invTest {
@@ -459,7 +460,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLike() {
 		// MySQL has non-standard everything
 		matchSequence = "\\%"
 	}
-	count, err := Query(suite.Map, suite.Map, suite.Ref).
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Like(&suite.Ref.Memo, matchSequence+search+matchSequence).
 		Count()
@@ -474,7 +475,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectEqual() {
 		return inv.Memo == match
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Equal(&suite.Ref.Memo, match).
 		Select()
@@ -489,7 +490,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectNotEqual() {
 		return inv.Memo != match
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		NotEqual(&suite.Ref.Memo, match).
 		Select()
@@ -503,7 +504,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLess() {
 		return inv.Updated < 2
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Less(&suite.Ref.Updated, 2).
 		Select()
@@ -517,7 +518,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLessOrEqual() {
 		return inv.Updated <= 2
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		LessOrEqual(&suite.Ref.Updated, 2).
 		Select()
@@ -531,7 +532,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater() {
 		return inv.Updated > 2
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Greater(&suite.Ref.Updated, 2).
 		Select()
@@ -541,7 +542,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater() {
 }
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreater_OffsetAndLimit() {
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Greater(&suite.Ref.Updated, 1).
 		Offset(1).
@@ -557,7 +558,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectGreaterOrEqual() {
 		return inv.Updated >= 2
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		GreaterOrEqual(&suite.Ref.Updated, 2).
 		Select()
@@ -571,7 +572,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectTrue() {
 		return inv.IsPaid
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		True(&suite.Ref.IsPaid).
 		Limit(1).
@@ -586,7 +587,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalse() {
 		return !inv.IsPaid
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Select()
@@ -600,7 +601,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalseAndEqual() {
 		return !inv.IsPaid && inv.Created == 2
 	})
 
-	count, err := Query(suite.Map, suite.Map, suite.Ref).
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Equal(&suite.Ref.Created, 2).
@@ -615,7 +616,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectWithFilter() {
 		return inv.Memo == "another_test_memo" || inv.Updated == 3
 	})
 
-	invTest, err := Query(suite.Map, suite.Map, suite.Ref).
+	invTest, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		Filter(filters.Or(filters.Equal(&suite.Ref.Memo, "another_test_memo"), filters.Equal(&suite.Ref.Updated, 3))).
 		Select()
@@ -629,14 +630,14 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
 		return !inv.IsPaid
 	})
 
-	count, err := Query(suite.Map, suite.Map, suite.Ref).
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Where().
 		False(&suite.Ref.IsPaid).
 		Delete()
 	if suite.NoError(err) {
 		suite.Equal(expectedCount, count)
 
-		count, err = Query(suite.Map, suite.Map, suite.Ref).
+		count, err = plans.Query(suite.Map, suite.Map, suite.Ref).
 			Where().
 			False(&suite.Ref.IsPaid).
 			Count()
@@ -653,12 +654,12 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
 	}
 	expectedCount := 0
 
-	err := Query(suite.Map, suite.Map, suite.Ref).
+	err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Truncate()
 	if !suite.NoError(err) {
 		suite.T().FailNow()
 	}
-	count, err := Query(suite.Map, suite.Map, suite.Ref).
+	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).
 		Count()
 	if !suite.NoError(err) {
 		suite.T().FailNow()
@@ -677,7 +678,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
 // 			IsPaid:   true,
 // 		},
 // 	}
-// 	err := Query(suite.Map, suite.Map, &inv).
+// 	err := plans.Query(suite.Map, suite.Map, &inv).
 // 		Assign(&inv.Id, inv.Id).
 // 		Assign(&inv.Created, inv.Created).
 // 		Assign(&inv.Updated, inv.Updated).
@@ -688,7 +689,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
 // 	if !suite.NoError(err) {
 // 		suite.T().FailNow()
 // 	}
-// 	invTest, err := Query(suite.Map, suite.Map, &inv).
+// 	invTest, err := plans.Query(suite.Map, suite.Map, &inv).
 // 		Where().
 // 		Equal(Lower(&inv.Memo), "a test memo with capitals").
 // 		Select()
@@ -702,7 +703,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseIn() {
 	ids := []interface{}{"1", "2", "3"}
 	ref := new(OverriddenInvoice)
-	count, err := Query(suite.Map, suite.Map, ref).
+	count, err := plans.Query(suite.Map, suite.Map, ref).
 		Where().
 		In(&ref.Id, ids...).
 		Count()

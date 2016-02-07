@@ -1,12 +1,14 @@
-package gorq
+package gorq_test
 
 import (
 	"database/sql"
 	"reflect"
 	"testing"
 
-	"github.com/go-gorp/gorp"
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/go-gorp/gorp"
+	"github.com/nelsam/gorq"
 	"github.com/nelsam/gorq/interfaces"
 	"github.com/nelsam/gorq/plans"
 	"github.com/stretchr/testify/suite"
@@ -23,7 +25,7 @@ type QueryTestSuite struct {
 }
 
 func (suite *QueryTestSuite) SetupSuite() {
-	dbMap := new(DbMap)
+	dbMap := new(gorq.DbMap)
 	dbMap.Dialect = gorp.SqliteDialect{}
 	connection, err := sql.Open("sqlite3", "/tmp/gorptest.bin")
 	if !suite.NoError(err) {
@@ -79,7 +81,7 @@ func (suite *DbMapTestSuite) SetupSuite() {
 }
 
 func (suite *DbMapTestSuite) TestBegin() {
-	tx, err := suite.Exec.(*DbMap).Begin()
+	tx, err := suite.Exec.(*gorq.DbMap).Begin()
 	if suite.NoError(err) {
 		suite.IsType((*Transaction)(nil), tx)
 	}
@@ -96,8 +98,8 @@ func TestTransactionSuite(t *testing.T) {
 func (suite *TransactionTestSuite) SetupSuite() {
 	suite.QueryTestSuite.SetupSuite()
 	suite.TypeName = "Transaction"
-	dbMap := suite.Exec.(*DbMap)
-	trans := new(Transaction)
+	dbMap := suite.Exec.(*gorq.DbMap)
+	trans := new(gorq.Transaction)
 	trans.dbmap = dbMap
 	suite.Exec = trans
 }

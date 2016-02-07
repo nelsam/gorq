@@ -380,7 +380,9 @@ func (plan *QueryPlan) Insert() error {
 	if len(plan.Errors) > 0 {
 		return plan.Errors[0]
 	}
-	statement := new(Statement)
+	statement := &Statement{
+		args: make([]interface{}, 0, len(plan.assignArgs)),
+	}
 	statement.query.WriteString("INSERT INTO ")
 	statement.query.WriteString(plan.dbMap.Dialect.QuotedTableForQuery(plan.table.SchemaName, plan.table.TableName))
 	statement.query.WriteString(" (")
@@ -396,6 +398,7 @@ func (plan *QueryPlan) Insert() error {
 			statement.query.WriteString(", ")
 		}
 		statement.query.WriteString(bindVar)
+		statement.args = append(statement.args, plan.assignArgs[i])
 	}
 	statement.query.WriteString(")")
 	_, err := plan.executor.Exec(statement.query.String(), statement.args...)
