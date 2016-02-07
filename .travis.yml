@@ -1,0 +1,34 @@
+language: go
+go:
+- 1.4
+- 1.5
+- tip
+
+matrix:
+  allow_failures:
+  - go: tip
+
+services:
+- mysql
+- postgres
+- sqlite3
+
+env:
+  global:
+  - secure: "qo3SA5eaQxKt6q8Vrrsesdf+ajuqJtQyZp2IPoMGVqps2RZDQYssks6V3IRVuoa/q8lyOYxDmu6fSVHrkblJvrEVPiU+IGEvuSUOrOYtgKt8yCX79xIKYdnhOQ/5Y/J3A+XfiwGdVs/eWy0JbGwxNC9wscMXG+AeMzrl+9oxSm0="
+  - POSTGRES_TEST_URL: user=gorptest password=gorptest dbname=gorptest host=localhost sslmode=disable
+  - MY_MYSQL_TEST_URL: gorptest/root/
+  - MYSQL_TEST_URL: root@/gorptest
+  - SQLITE_TEST_URL: /tmp/gorptest.bin
+
+before_script:
+- mysql -u root -h 127.0.0.1 -e "create database gorptest"
+- mysql -u root -h 127.0.0.1 -e "grant all on gorptest.* to gorptest@localhost identified by 'gorptest'"
+- psql -U postgres -h 127.0.0.1 -c "create user gorptest password 'gorptest'"
+- psql -U postgres -h 127.0.0.1 -c "create database gorptest owner gorptest"
+
+script:
+- go version
+- go get -t ./...
+- go build ./...
+- ./combined_coverage_tests.sh
