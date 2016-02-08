@@ -285,7 +285,7 @@ func (plan *QueryPlan) argOrColumn(value interface{}) (args []interface{}, sqlVa
 	switch src := value.(type) {
 	case filters.SqlWrapper:
 		var wrapperVal string
-		args, wrapperVal, err = plan.argOrColumn(value)
+		args, wrapperVal, err = plan.argOrColumn(src.ActualValue())
 		if err != nil {
 			return nil, "", err
 		}

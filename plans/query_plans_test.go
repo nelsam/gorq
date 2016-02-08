@@ -7,16 +7,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-gorp/gorp"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ziutek/mymysql/godrv"
+
+	"github.com/go-gorp/gorp"
+	"github.com/nelsam/gorq"
 	"github.com/nelsam/gorq/dialects"
 	"github.com/nelsam/gorq/filters"
 	"github.com/nelsam/gorq/interfaces"
 	"github.com/nelsam/gorq/plans"
 	"github.com/stretchr/testify/suite"
-	_ "github.com/ziutek/mymysql/godrv"
 )
 
 var (
@@ -398,7 +400,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 		Equal(&suite.Ref.Id, targetInv.Id).
 		Update()
 	if suite.NoError(err) {
-		suite.Equal(1, count)
+		suite.Equal(int(count), 1)
 		isPaidCount += count
 	}
 
@@ -407,7 +409,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Update() {
 		True(&suite.Ref.IsPaid).
 		Select()
 	if suite.NoError(err) {
-		suite.Equal(isPaidCount, len(invTest))
+		suite.Equal(int(isPaidCount), len(invTest))
 	}
 }
 
@@ -421,7 +423,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectSimple() {
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_CountSimple() {
 	count, err := plans.Query(suite.Map, suite.Map, suite.Ref).Count()
 	if suite.NoError(err) {
-		suite.Equal(len(testInvoices), count)
+		suite.Equal(len(testInvoices), int(count))
 	}
 }
 
@@ -465,7 +467,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectLike() {
 		Like(&suite.Ref.Memo, matchSequence+search+matchSequence).
 		Count()
 	if suite.NoError(err) {
-		suite.Equal(expectedCount, count)
+		suite.Equal(expectedCount, int(count))
 	}
 }
 
@@ -607,7 +609,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_SelectFalseAndEqual() {
 		Equal(&suite.Ref.Created, 2).
 		Count()
 	if suite.NoError(err) {
-		suite.Equal(expectedCount, count)
+		suite.Equal(expectedCount, int(count))
 	}
 }
 
@@ -635,14 +637,14 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Delete() {
 		False(&suite.Ref.IsPaid).
 		Delete()
 	if suite.NoError(err) {
-		suite.Equal(expectedCount, count)
+		suite.Equal(expectedCount, int(count))
 
 		count, err = plans.Query(suite.Map, suite.Map, suite.Ref).
 			Where().
 			False(&suite.Ref.IsPaid).
 			Count()
 		if suite.NoError(err) {
-			suite.Equal(0, count, "No unpaid invoices should exist after deleting all unpaid invoices")
+			suite.Equal(0, int(count), "No unpaid invoices should exist after deleting all unpaid invoices")
 		}
 	}
 }
@@ -664,41 +666,41 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_Truncate() {
 	if !suite.NoError(err) {
 		suite.T().FailNow()
 	}
-	suite.Equal(expectedCount, count)
+	suite.Equal(expectedCount, int(count))
 }
 
-// func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
-// 	inv := OverriddenInvoice{
-// 		Id: "79",
-// 		Invoice: Invoice{
-// 			Created:  2,
-// 			Updated:  1,
-// 			Memo:     "A Test Memo With Capitals",
-// 			PersonId: 1,
-// 			IsPaid:   true,
-// 		},
-// 	}
-// 	err := plans.Query(suite.Map, suite.Map, &inv).
-// 		Assign(&inv.Id, inv.Id).
-// 		Assign(&inv.Created, inv.Created).
-// 		Assign(&inv.Updated, inv.Updated).
-// 		Assign(&inv.Memo, inv.Memo).
-// 		Assign(&inv.PersonId, inv.PersonId).
-// 		Assign(&inv.IsPaid, inv.IsPaid).
-// 		Insert()
-// 	if !suite.NoError(err) {
-// 		suite.T().FailNow()
-// 	}
-// 	invTest, err := plans.Query(suite.Map, suite.Map, &inv).
-// 		Where().
-// 		Equal(Lower(&inv.Memo), "a test memo with capitals").
-// 		Select()
-// 	if suite.NoError(err) {
-// 		if suite.Equal(len(invTest), 1) {
-// 			suite.Equal(invTest[0].(*OverriddenInvoice).Memo, "A Test Memo With Capitals")
-// 		}
-// 	}
-// }
+func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseLower() {
+	inv := OverriddenInvoice{
+		Id: "79",
+		Invoice: Invoice{
+			Created:  2,
+			Updated:  1,
+			Memo:     "A Test Memo With Capitals",
+			PersonId: 1,
+			IsPaid:   true,
+		},
+	}
+	err := plans.Query(suite.Map, suite.Map, &inv).
+		Assign(&inv.Id, inv.Id).
+		Assign(&inv.Created, inv.Created).
+		Assign(&inv.Updated, inv.Updated).
+		Assign(&inv.Memo, inv.Memo).
+		Assign(&inv.PersonId, inv.PersonId).
+		Assign(&inv.IsPaid, inv.IsPaid).
+		Insert()
+	if !suite.NoError(err) {
+		suite.T().FailNow()
+	}
+	invTest, err := plans.Query(suite.Map, suite.Map, &inv).
+		Where().
+		Equal(gorq.Lower(&inv.Memo), "a test memo with capitals").
+		Select()
+	if suite.NoError(err) {
+		if suite.Equal(len(invTest), 1) {
+			suite.Equal(invTest[0].(*OverriddenInvoice).Memo, "A Test Memo With Capitals")
+		}
+	}
+}
 
 func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseIn() {
 	ids := []interface{}{"1", "2", "3"}
@@ -708,7 +710,7 @@ func (suite *QueryLanguageTestSuite) TestQueryLanguage_WhereClauseIn() {
 		In(&ref.Id, ids...).
 		Count()
 	if suite.NoError(err) {
-		suite.Equal(count, len(ids))
+		suite.Equal(int(count), len(ids))
 	}
 }
 
