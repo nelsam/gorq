@@ -1,4 +1,4 @@
-[![Build Status](http://45.55.172.11/api/badge/github.com/nelsam/gorq/status.svg?branch=master)](http://45.55.172.11/github.com/nelsam/gorq) [![Coverage Status](https://coveralls.io/repos/nelsam/gorq/badge.svg)](https://coveralls.io/r/nelsam/gorq) [![GoDoc](https://godoc.org/github.com/nelsam/gorq?status.png)](http://godoc.org/github.com/nelsam/gorq)
+[![Build Status](https://travis-ci.org/nelsam/gorq.svg?branch=master)](https://travis-ci.org/nelsam/gorq) [![Coverage Status](https://coveralls.io/repos/nelsam/gorq/badge.svg)](https://coveralls.io/r/nelsam/gorq) [![GoDoc](https://godoc.org/github.com/nelsam/gorq?status.png)](http://godoc.org/github.com/nelsam/gorq)
 
 
 gorq
