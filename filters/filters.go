@@ -160,6 +160,17 @@ func (filter *ComparisonFilter) Where(values ...string) string {
 	return values[0] + filter.Comparison + values[1]
 }
 
+// ConversionFilter converts the arguments in a ComparisonFilter to another
+// type in the query
+type ConversionFilter struct {
+	ComparisonFilter
+	to string
+}
+
+func (filter *ConversionFilter) Where(values ...string) string {
+	return values[0] + "::" + filter.to + filter.Comparison + values[1] + "::" + filter.to
+}
+
 // A SingleFilter just deals with a single value, like with booleans
 // or 'is not null' constraints.
 type SingleFilter struct {
@@ -319,5 +330,18 @@ func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 		Left:       fieldPtr,
 		Comparison: ">=",
 		Right:      value,
+	}
+}
+
+// ConvertTo converts the type of the object in the query to the given type
+// for both sides of a comparison.
+//
+// If a Filter interface is passed to this function that is not of type
+// ComparisonFilter, it will panic.
+func ConvertTo(filter Filter, to string) Filter {
+	f := filter.(*ComparisonFilter)
+	return &ConversionFilter{
+		ComparisonFilter: *f,
+		to:               to,
 	}
 }

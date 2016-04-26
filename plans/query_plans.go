@@ -633,6 +633,11 @@ func (plan *QueryPlan) GreaterOrEqual(fieldPtr interface{}, value interface{}) i
 	return plan.Filter(filters.GreaterOrEqual(fieldPtr, value))
 }
 
+// ConvertTo adds a type converted version of a ComparisonFilter to the where clause.
+func (plan *QueryPlan) ConvertTo(filter filters.Filter, to string) interfaces.WhereQuery {
+	return plan.Filter(filters.ConvertTo(filter, to))
+}
+
 // Null adds a column IS NULL comparison to the where clause
 func (plan *QueryPlan) Null(fieldPtr interface{}) interfaces.WhereQuery {
 	return plan.Filter(filters.Null(fieldPtr))
