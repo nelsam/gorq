@@ -268,6 +268,7 @@ type WhereQuery interface {
 	Null(fieldPtr interface{}) WhereQuery
 	True(fieldPtr interface{}) WhereQuery
 	False(fieldPtr interface{}) WhereQuery
+	ConvertTo(filter filters.Filter, to string) WhereQuery
 
 	// A WhereQuery is returned when Where() has been called before
 	// Assign(), which means it must be a select or delete statement.
