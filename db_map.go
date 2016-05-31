@@ -120,3 +120,13 @@ type Transaction struct {
 func (t *Transaction) Query(target interface{}) interfaces.Query {
 	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.joinOps...)
 }
+
+func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
+	switch e := exec.(type) {
+	case *gorp.Transaction:
+		return &Transaction{Transaction: *e, dbmap: m}
+	case *gorp.DbMap:
+		return &DbMap{DbMap: *e}
+	}
+	panic("unable to convert gorp to gorq")
+}
