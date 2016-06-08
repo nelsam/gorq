@@ -117,6 +117,7 @@ type QueryPlan struct {
 	tables         []*gorp.TableMap
 	distinct       bool
 	forUpdate      bool
+	forUpdateOf    string
 }
 
 // Query generates a Query for a target model.  The target that is
@@ -540,6 +541,7 @@ func (plan *QueryPlan) JoinType(joinType string, target interface{}) (joinPlan i
 	joinPlan = &JoinQueryPlan{QueryPlan: plan}
 	plan.storeJoin()
 	table, alias, err := plan.mapTable(reflect.ValueOf(target))
+
 	if err != nil {
 		plan.Errors = append(plan.Errors, err)
 		// Add a filter just so the rest of the query methods won't panic
@@ -785,8 +787,16 @@ func (plan *QueryPlan) Distinct() {
 }
 
 // ForUpdate will make this query select using "for update" row locking.
-func (plan *QueryPlan) ForUpdate() {
+func (plan *QueryPlan) ForUpdate(of interface{}) {
 	plan.forUpdate = true
+	if of != nil {
+		table, _, err := plan.mapTable(reflect.ValueOf(of))
+		if err != nil {
+			plan.Errors = append(plan.Errors, err)
+			return
+		}
+		plan.forUpdateOf = plan.dbMap.Dialect.QuotedTableForQuery(table.SchemaName, table.TableName)
+	}
 }
 
 // SelectToTarget will run this query plan as a SELECT statement, and
@@ -842,6 +852,13 @@ func (plan *QueryPlan) selectQuery() (string, error) {
 	if err := plan.writeSelectSuffix(buffer); err != nil {
 		bufPool.Put(buffer)
 		return "", err
+	}
+	if plan.forUpdate {
+		buffer.WriteString(" for update")
+		if plan.forUpdateOf != "" {
+			buffer.WriteString(" of ")
+			buffer.WriteString(plan.forUpdateOf)
+		}
 	}
 	s := buffer.String()
 	bufPool.Put(buffer)
@@ -939,9 +956,6 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 				buffer.WriteString(m.alias)
 			}
 		}
-	}
-	if plan.forUpdate {
-		buffer.WriteString("for update ")
 	}
 	return nil
 }
