@@ -116,6 +116,7 @@ type QueryPlan struct {
 	argLock        sync.RWMutex
 	tables         []*gorp.TableMap
 	distinct       bool
+	forUpdate      bool
 }
 
 // Query generates a Query for a target model.  The target that is
@@ -783,6 +784,11 @@ func (plan *QueryPlan) Distinct() {
 	plan.distinct = true
 }
 
+// ForUpdate will make this query select using "for update" row locking.
+func (plan *QueryPlan) ForUpdate() {
+	plan.forUpdate = true
+}
+
 // SelectToTarget will run this query plan as a SELECT statement, and
 // append results directly to the passed in slice pointer.
 func (plan *QueryPlan) SelectToTarget(target interface{}) error {
@@ -892,6 +898,9 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 	buffer.WriteString("select ")
 	if plan.distinct {
 		buffer.WriteString("distinct ")
+	}
+	if plan.forUpdate {
+		buffer.WriteString("for update ")
 	}
 	for index, m := range plan.colMap {
 		if m.doSelect {
