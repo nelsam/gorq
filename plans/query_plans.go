@@ -899,9 +899,6 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 	if plan.distinct {
 		buffer.WriteString("distinct ")
 	}
-	if plan.forUpdate {
-		buffer.WriteString("for update ")
-	}
 	for index, m := range plan.colMap {
 		if m.doSelect {
 			if index != 0 {
@@ -942,6 +939,9 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 				buffer.WriteString(m.alias)
 			}
 		}
+	}
+	if plan.forUpdate {
+		buffer.WriteString("for update ")
 	}
 	return nil
 }
