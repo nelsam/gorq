@@ -150,6 +150,7 @@ type ComparisonFilter struct {
 	Left       interface{}
 	Comparison string
 	Right      interface{}
+	RightMod   func() string
 }
 
 func (filter *ComparisonFilter) ActualValues() []interface{} {
@@ -157,6 +158,10 @@ func (filter *ComparisonFilter) ActualValues() []interface{} {
 }
 
 func (filter *ComparisonFilter) Where(values ...string) string {
+	if filter.RightMod != nil {
+		return values[0] + " " + filter.Comparison + " " + "(" + values[1] + filter.RightMod() + ")"
+	}
+
 	return values[0] + filter.Comparison + values[1]
 }
 
@@ -330,6 +335,46 @@ func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 		Left:       fieldPtr,
 		Comparison: ">=",
 		Right:      value,
+	}
+}
+
+// LessMod returns a filter for fieldPtr < value
+func LessMod(fieldPtr interface{}, value interface{}, mod func() string) Filter {
+	return &ComparisonFilter{
+		Left:       fieldPtr,
+		Comparison: "<",
+		Right:      value,
+		RightMod:   mod,
+	}
+}
+
+// LessOrEqualMod returns a filter for fieldPtr <= value
+func LessOrEqualMod(fieldPtr interface{}, value interface{}, mod func() string) Filter {
+	return &ComparisonFilter{
+		Left:       fieldPtr,
+		Comparison: "<=",
+		Right:      value,
+		RightMod:   mod,
+	}
+}
+
+// GreaterMod returns a filter for fieldPtr > value
+func GreaterMod(fieldPtr interface{}, value interface{}, mod func() string) Filter {
+	return &ComparisonFilter{
+		Left:       fieldPtr,
+		Comparison: ">",
+		Right:      value,
+		RightMod:   mod,
+	}
+}
+
+// GreaterOrEqualMod returns a filter for fieldPtr >= value
+func GreaterOrEqualMod(fieldPtr interface{}, value interface{}, mod func() string) Filter {
+	return &ComparisonFilter{
+		Left:       fieldPtr,
+		Comparison: ">=",
+		Right:      value,
+		RightMod:   mod,
 	}
 }
 
