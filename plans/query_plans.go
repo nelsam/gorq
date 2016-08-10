@@ -865,6 +865,10 @@ func (plan *QueryPlan) selectQuery() (string, error) {
 	return s, nil
 }
 
+func (plan *QueryPlan) ArgOrColumn(value interface{}) (sqlValue string, err error) {
+	return plan.argOrColumn(value)
+}
+
 // argOrColumn returns the string that should be used to represent a
 // value in a query.  If the value is detected to be a field, an error
 // will be returned if the field cannot be selected.  If the value is
