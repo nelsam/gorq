@@ -56,7 +56,7 @@ type Selector interface {
 	Count() (int64, error)
 
 	// Distinct adds the DISTINCT keyword to the resulting SELECT statement
-	Distinct()
+	Distinct(interface{})
 }
 
 // A SelectManipulator is a query that will return a list of results
