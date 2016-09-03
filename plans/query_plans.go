@@ -115,8 +115,7 @@ type QueryPlan struct {
 	argLen         int
 	argLock        sync.RWMutex
 	tables         []*gorp.TableMap
-	distinct       bool
-	distinctField  interface{}
+	distinctFields []interface{}
 	forUpdate      bool
 	forUpdateOf    string
 }
@@ -783,9 +782,8 @@ func (plan *QueryPlan) Select() ([]interface{}, error) {
 }
 
 // Distinct will make this query return only DISTINCT results
-func (plan *QueryPlan) Distinct(field interface{}) {
-	plan.distinct = true
-	plan.distinctField = field
+func (plan *QueryPlan) Distinct(fields ...interface{}) {
+	plan.distinctFields = fields
 }
 
 // ForUpdate will make this query select using "for update" row locking.
@@ -919,19 +917,30 @@ func (plan *QueryPlan) writeSelectColumns(buffer *bytes.Buffer) error {
 		return plan.Errors[0]
 	}
 	buffer.WriteString("select ")
-	if plan.distinct {
+	if len(plan.distinctFields) != 0 {
+		buffer.WriteString("distinct on (")
 		var name string
 		var err error
-		if plan.distinctField != nil {
-			name, err = plan.argOrColumn(plan.distinctField)
-			if err != nil {
-				return err
-			}
-			buffer.WriteString("distinct on (")
-			buffer.WriteString(name)
+		name, err = plan.argOrColumn(plan.distinctFields[0])
+		if err != nil {
+			return err
+		}
+		buffer.WriteString(name)
+
+		if len(plan.distinctFields) == 1 {
 			buffer.WriteString(") ")
 		} else {
-			buffer.WriteString("distinct ")
+			for _, df := range plan.distinctFields {
+				var name string
+				var err error
+				name, err = plan.argOrColumn(df)
+				if err != nil {
+					return err
+				}
+				buffer.WriteString(",")
+				buffer.WriteString(name)
+			}
+			buffer.WriteString(") ")
 		}
 	}
 	for index, m := range plan.colMap {
