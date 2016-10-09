@@ -6,16 +6,6 @@ import (
 	"github.com/nelsam/gorq/plans"
 )
 
-// SqlExecutor is any type that can execute SQL statements.  Gorq's
-// SqlExecutor matches that of gorp, but has some additional methods.
-type SqlExecutor interface {
-	gorp.SqlExecutor
-
-	// Query should return a Query type that will perform queries
-	// against target.
-	Query(target interface{}) interfaces.Query
-}
-
 // DbMap embeds "github.com/go-gorp/gorp".DbMap and adds query
 // methods to it.
 type DbMap struct {
