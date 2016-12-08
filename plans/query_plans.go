@@ -14,6 +14,10 @@ import (
 	"github.com/outdoorsy/gorq/interfaces"
 )
 
+type HasPostDirectUpdate interface {
+	PostDirectUpdate(gorp.SqlExecutor) error
+}
+
 var bufPool = sync.Pool{
 	New: func() interface{} {
 		return &bytes.Buffer{}
@@ -1158,6 +1162,13 @@ func (plan *QueryPlan) Update() (int64, error) {
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return -1, err
+	}
+
+	if v, ok := plan.target.Interface().(HasPostDirectUpdate); ok {
+		err := v.PostDirectUpdate(plan.executor)
+		if err != nil {
+			return -1, err
+		}
 	}
 
 	return rows, nil
