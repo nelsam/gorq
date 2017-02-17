@@ -170,7 +170,7 @@ func (wrapper distanceWrapper) WrapSql(sqlValues ...string) string {
 		panic("This should be impossible.  There are more sql values than actual values.")
 	}
 	if sqlValues[2] != "" {
-		return fmt.Sprintf("(ST_Distance(%s, %s)/%s)", sqlValues[0], sqlValues[1], sqlValues[2])
+		return fmt.Sprintf("(ST_Distance(%s, %s)/GREATEST(%s,0.5))", sqlValues[0], sqlValues[1], sqlValues[2])
 	}
 	return fmt.Sprintf("ST_Distance(%s, %s)", sqlValues[0], sqlValues[1])
 }
