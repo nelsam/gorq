@@ -22,7 +22,7 @@ type Geography struct {
 
 // String returns a string representation of p.
 func (g Geography) String() string {
-	return fmt.Sprintf("POINT(%v %v)", g.Lng, g.Lat)
+	return fmt.Sprintf("ST_POINT(%v,%v)", g.Lng, g.Lat)
 }
 
 // Scan implements "database/sql".Scanner and will scan the Postgis POINT(x y)
@@ -156,8 +156,9 @@ func Contains(container, target interface{}) filters.Filter {
 }
 
 type distanceWrapper struct {
-	from interface{}
-	to   interface{}
+	from   interface{}
+	to     interface{}
+	weight interface{}
 }
 
 func (wrapper distanceWrapper) ActualValues() []interface{} {
@@ -165,14 +166,17 @@ func (wrapper distanceWrapper) ActualValues() []interface{} {
 }
 
 func (wrapper distanceWrapper) WrapSql(sqlValues ...string) string {
-	if len(sqlValues) != 2 {
+	if len(sqlValues) != 3 {
 		panic("This should be impossible.  There are more sql values than actual values.")
+	}
+	if sqlValues[2] != "" {
+		return fmt.Sprintf("(ST_Distance(%s, %s)/%s)", sqlValues[0], sqlValues[1], sqlValues[2])
 	}
 	return fmt.Sprintf("ST_Distance(%s, %s)", sqlValues[0], sqlValues[1])
 }
 
 // Distance wraps two Geometry arguments (or pointers to Geometry fields) in a
 // call to PostGIS to get the distance (in meters) between them.
-func Distance(from interface{}, to interface{}) filters.MultiSqlWrapper {
-	return distanceWrapper{from: from, to: to}
+func Distance(from interface{}, to interface{}, weight interface{}) filters.MultiSqlWrapper {
+	return distanceWrapper{from: from, to: to, weight: weight}
 }
