@@ -22,7 +22,7 @@ type Geography struct {
 
 // String returns a string representation of p.
 func (g Geography) String() string {
-	return fmt.Sprintf("ST_POINT(%v,%v)", g.Lng, g.Lat)
+	return fmt.Sprintf("POINT(%v %v)", g.Lng, g.Lat)
 }
 
 // Scan implements "database/sql".Scanner and will scan the Postgis POINT(x y)
@@ -162,7 +162,7 @@ type distanceWrapper struct {
 }
 
 func (wrapper distanceWrapper) ActualValues() []interface{} {
-	return []interface{}{wrapper.from, wrapper.to}
+	return []interface{}{wrapper.from, wrapper.to, wrapper.weight}
 }
 
 func (wrapper distanceWrapper) WrapSql(sqlValues ...string) string {
