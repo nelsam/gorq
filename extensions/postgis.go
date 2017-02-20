@@ -162,17 +162,19 @@ type distanceWrapper struct {
 }
 
 func (wrapper distanceWrapper) ActualValues() []interface{} {
+	if wrapper.weight == nil {
+		return []interface{}{wrapper.from, wrapper.to}
+	}
 	return []interface{}{wrapper.from, wrapper.to, wrapper.weight}
 }
 
 func (wrapper distanceWrapper) WrapSql(sqlValues ...string) string {
-	if len(sqlValues) != 3 {
-		panic("This should be impossible.  There are more sql values than actual values.")
-	}
-	if sqlValues[2] != "" {
+	if len(sqlValues) == 2 {
+		return fmt.Sprintf("ST_Distance(%s, %s)", sqlValues[0], sqlValues[1])
+	} else if len(sqlValues) == 3 {
 		return fmt.Sprintf("(ST_Distance(%s, %s)/GREATEST(%s,0.5))", sqlValues[0], sqlValues[1], sqlValues[2])
 	}
-	return fmt.Sprintf("ST_Distance(%s, %s)", sqlValues[0], sqlValues[1])
+	panic(fmt.Sprintf("Incorrect number of SQL values passed to WrapSql in distanceWrapper. Wanted 2 or 3, got %d", len(sqlValues)))
 }
 
 // Distance wraps two Geometry arguments (or pointers to Geometry fields) in a
