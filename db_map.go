@@ -121,6 +121,15 @@ func (t *Transaction) Query(target interface{}) interfaces.Query {
 	return plans.Query(&t.dbmap.DbMap, &t.Transaction, target, t.dbmap.joinOps...)
 }
 
+// DbMap is used to get a reference to the underlying dbmap the Transaction is using to do its work.
+//
+// In some cases, we have a Transaction, but need access to the DbMap in order to do work outside
+// the transaction or on another goroutine. This allows us to extract it immediately without having
+// to pass the original DbMap alongside.
+func (t *Transaction) DbMap() *DbMap {
+	return t.dbmap
+}
+
 func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
 	switch e := exec.(type) {
 	case *gorp.Transaction:
