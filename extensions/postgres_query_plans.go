@@ -39,6 +39,7 @@ type PostgresJoinQuery interface {
 	References() PostgresJoinQuery
 
 	In(fieldPtr interface{}, values ...interface{}) PostgresJoinQuery
+	NotIn(fieldPtr interface{}, values ...interface{}) PostgresJoinQuery
 	Like(fieldPtr interface{}, pattern string) PostgresJoinQuery
 	Equal(fieldPtr interface{}, value interface{}) PostgresJoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) PostgresJoinQuery
@@ -79,6 +80,7 @@ type PostgresAssignJoinQuery interface {
 	References() PostgresAssignJoinQuery
 
 	In(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery
+	NotIn(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery
 	Like(fieldPtr interface{}, pattern string) PostgresAssignJoinQuery
 	Equal(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
 	NotEqual(fieldPtr interface{}, value interface{}) PostgresAssignJoinQuery
