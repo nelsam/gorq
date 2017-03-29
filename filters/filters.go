@@ -122,6 +122,28 @@ func (filter *InFilter) Where(values ...string) string {
 	return values[0] + " IN (" + strings.Join(values[1:], ", ") + ")"
 }
 
+// A NotInFilter is a filter for value NOT IN (list_of_values).
+//
+// TODO: InFilter should also support sub-selects, but it currently
+// only supports lists of values.
+type NotInFilter struct {
+	expression interface{}
+	valueList  []interface{}
+}
+
+func (filter *NotInFilter) ActualValues() []interface{} {
+	values := make([]interface{}, 0, len(filter.valueList)+1)
+	values = append(values, filter.expression)
+	for _, v := range filter.valueList {
+		values = append(values, v)
+	}
+	return values
+}
+
+func (filter *NotInFilter) Where(values ...string) string {
+	return values[0] + " NOT IN (" + strings.Join(values[1:], ", ") + ")"
+}
+
 // A JoinFilter is an AndFilter used for JOIN clauses and other forms
 // of multi-table filters.
 type JoinFilter struct {
@@ -270,6 +292,14 @@ func False(fieldPtr interface{}) Filter {
 // In returns a filter for fieldPtr IN (values)
 func In(fieldPtr interface{}, values ...interface{}) Filter {
 	return &InFilter{
+		expression: fieldPtr,
+		valueList:  values,
+	}
+}
+
+// NotIn returns a filter for fieldPtr NOT IN (values)
+func NotIn(fieldPtr interface{}, values ...interface{}) Filter {
+	return &NotInFilter{
 		expression: fieldPtr,
 		valueList:  values,
 	}

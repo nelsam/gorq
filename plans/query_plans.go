@@ -605,6 +605,11 @@ func (plan *QueryPlan) In(fieldPtr interface{}, values ...interface{}) interface
 	return plan.Filter(filters.In(fieldPtr, values...))
 }
 
+// NotIn adds a column NOT IN (values...) comparison to the where clause.
+func (plan *QueryPlan) NotIn(fieldPtr interface{}, values ...interface{}) interfaces.WhereQuery {
+	return plan.Filter(filters.NotIn(fieldPtr, values...))
+}
+
 // Like adds a column LIKE pattern comparison to the where clause.
 func (plan *QueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.WhereQuery {
 	return plan.Filter(filters.Like(fieldPtr, pattern))
@@ -1237,6 +1242,11 @@ func (plan *JoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) inter
 	return plan
 }
 
+func (plan *JoinQueryPlan) NotIn(fieldPtr interface{}, values ...interface{}) interfaces.JoinQuery {
+	plan.QueryPlan.NotIn(fieldPtr, values...)
+	return plan
+}
+
 func (plan *JoinQueryPlan) Like(fieldPtr interface{}, pattern string) interfaces.JoinQuery {
 	plan.QueryPlan.Like(fieldPtr, pattern)
 	return plan
@@ -1328,6 +1338,11 @@ func (plan *AssignQueryPlan) Filter(filters ...filters.Filter) interfaces.Update
 
 func (plan *AssignQueryPlan) In(fieldPtr interface{}, values ...interface{}) interfaces.UpdateQuery {
 	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *AssignQueryPlan) NotIn(fieldPtr interface{}, values ...interface{}) interfaces.UpdateQuery {
+	plan.QueryPlan.NotIn(fieldPtr, values...)
 	return plan
 }
 

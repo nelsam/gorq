@@ -153,6 +153,11 @@ func (plan *PostgresExtendedJoinQueryPlan) In(fieldPtr interface{}, values ...in
 	return plan
 }
 
+func (plan *PostgresExtendedJoinQueryPlan) NotIn(fieldPtr interface{}, values ...interface{}) PostgresJoinQuery {
+	plan.QueryPlan.NotIn(fieldPtr, values...)
+	return plan
+}
+
 func (plan *PostgresExtendedJoinQueryPlan) Like(fieldPtr interface{}, pattern string) PostgresJoinQuery {
 	plan.QueryPlan.Like(fieldPtr, pattern)
 	return plan
@@ -238,6 +243,11 @@ func (plan *PostgresExtendedAssignJoinQueryPlan) References() PostgresAssignJoin
 
 func (plan *PostgresExtendedAssignJoinQueryPlan) In(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery {
 	plan.QueryPlan.In(fieldPtr, values...)
+	return plan
+}
+
+func (plan *PostgresExtendedAssignJoinQueryPlan) NotIn(fieldPtr interface{}, values ...interface{}) PostgresAssignJoinQuery {
+	plan.QueryPlan.NotIn(fieldPtr, values...)
 	return plan
 }
 
