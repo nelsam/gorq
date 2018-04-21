@@ -2,7 +2,9 @@ package gorq
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/interfaces"
@@ -88,11 +90,20 @@ func (m *DbMap) Query(target interface{}) interfaces.Query {
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
 // except that its return type is gorq.Transaction.
-func (m *DbMap) Begin() (*Transaction, error) {
+func (m *DbMap) Begin(timeout time.Duration) (*Transaction, error) {
 	t, err := m.DbMap.Begin()
 	if err != nil {
 		return nil, err
 	}
+
+	// we don't want any transaction to run longer than 60 seconds
+	if timeout != 0 {
+		_, err = t.Exec(fmt.Sprintf("SET statement_timeout=%d;", int64(timeout/time.Millisecond)))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Transaction{Transaction: *t, dbmap: m}, nil
 }
 
