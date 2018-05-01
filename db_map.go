@@ -96,9 +96,9 @@ func (m *DbMap) Begin(timeout time.Duration) (*Transaction, error) {
 		return nil, err
 	}
 
-	// we don't want any transaction to run longer than 60 seconds
+	// if acquiring a lock takes more than timeout duration, kill it
 	if timeout != 0 {
-		_, err = t.Exec(fmt.Sprintf("SET statement_timeout=%d;", int64(timeout/time.Millisecond)))
+		_, err = t.Exec(fmt.Sprintf("SET LOCAL lock_timeout=%d;", int64(timeout/time.Millisecond)))
 		if err != nil {
 			return nil, err
 		}
