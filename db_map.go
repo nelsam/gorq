@@ -100,11 +100,45 @@ func (m *DbMap) Begin(timeout time.Duration) (*Transaction, error) {
 	if timeout != 0 {
 		_, err = t.Exec(fmt.Sprintf("SET LOCAL lock_timeout=%d;", int64(timeout/time.Millisecond)))
 		if err != nil {
+			t.Rollback()
 			return nil, err
 		}
 	}
 
 	return &Transaction{Transaction: *t, dbmap: m}, nil
+}
+
+// WithTX creates a new transaction, calls your function with that transaction
+// as an argument and automatically commits or reverts the changes based on the
+// error return from your function.
+//
+// This is useful for one-off operations that need to be isolated from other
+// transactions. For example, several logically-separated operations in a single
+// event handler. This allows each separate operation to fail independently,
+// preventing the main transaction (if there is one) from needing a rollback.
+//
+// Returns an error that can either be an error with the begin/commit/rollback
+// or the error returned from your handler.
+func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
+	tx, err := m.Begin(10 * time.Second)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	err = fn(tx)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return nil
 }
 
 func (m *DbMap) table(target interface{}) *gorp.TableMap {
