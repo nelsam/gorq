@@ -126,6 +126,14 @@ func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
 		return err
 	}
 
+	defer func() {
+		recoverErr := recover()
+		if recoverErr != nil {
+			tx.Rollback()
+			panic(recoverErr)
+		}
+	}()
+
 	err = fn(tx)
 	if err != nil {
 		tx.Rollback()
