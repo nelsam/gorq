@@ -1,6 +1,7 @@
 package gorq
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -19,6 +20,7 @@ type SqlExecutor interface {
 	// Query should return a Query type that will perform queries
 	// against target.
 	Query(target interface{}) interfaces.Query
+	AttachContext(context.Context) SqlExecutor
 }
 
 // DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
@@ -86,6 +88,13 @@ func (m *DbMap) JoinOps() []plans.JoinOp {
 func (m *DbMap) Query(target interface{}) interfaces.Query {
 	gorpMap := &m.DbMap
 	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
+}
+
+func (m *DbMap) AttachContext(ctx context.Context) SqlExecutor {
+	copy := &DbMap{}
+	*copy = *m
+	copy.DbMap = *copy.DbMap.WithContext(ctx).(*gorp.DbMap)
+	return copy
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
@@ -181,6 +190,13 @@ func (t *Transaction) Query(target interface{}) interfaces.Query {
 // to pass the original DbMap alongside.
 func (t *Transaction) DbMap() *DbMap {
 	return t.dbmap
+}
+
+func (t *Transaction) AttachContext(ctx context.Context) SqlExecutor {
+	copy := &Transaction{}
+	*copy = *t
+	copy.Transaction = *copy.Transaction.WithContext(ctx).(*gorp.Transaction)
+	return copy
 }
 
 func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
