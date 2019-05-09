@@ -102,17 +102,13 @@ func (suite *DbMapTestSuite) TestAttachContext() {
 	})
 
 	suite.T().Run("Transaction AttachContext", func(t *testing.T) {
-		t.Skip("Transactions not supported for Sqlite")
 		ctx := context.Background()
-		woutCtx, err := suite.Exec.(*DbMap).Begin(1 * time.Second)
-		if err != nil {
-			t.Error(err)
-			t.FailNow()
-		}
-		withCtx := woutCtx.AttachContext(ctx).(*Transaction)
+		dbm := suite.Exec.(*DbMap)
+		txWoutCtx := &Transaction{Transaction: gorp.Transaction{}, dbmap: dbm}
+		txWithCtx := txWoutCtx.AttachContext(ctx).(*Transaction)
 
-		suite.NotEqual(woutCtx, withCtx)
-		suite.NotEqual(woutCtx.Transaction, withCtx.Transaction)
+		suite.NotEqual(txWoutCtx, txWithCtx)
+		suite.NotEqual(txWoutCtx.Transaction, txWithCtx.Transaction)
 	})
 }
 
