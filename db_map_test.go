@@ -1,9 +1,11 @@
 package gorq
 
 import (
+	"context"
 	"database/sql"
 	"reflect"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/outdoorsy/gorp"
@@ -79,10 +81,35 @@ func (suite *DbMapTestSuite) SetupSuite() {
 }
 
 func (suite *DbMapTestSuite) TestBegin() {
-	tx, err := suite.Exec.(*DbMap).Begin()
+	// TODO: come back around and fix this some day
+	suite.T().Skip("Skipping due to lack of support for execution timeouts in Sqlite")
+
+	tx, err := suite.Exec.(*DbMap).Begin(1 * time.Second)
 	if suite.NoError(err) {
 		suite.IsType((*Transaction)(nil), tx)
 	}
+}
+
+func (suite *DbMapTestSuite) TestAttachContext() {
+	suite.T().Run("DbMap Attach Context", func(t *testing.T) {
+		ctx := context.Background()
+		withCtx := suite.Exec.AttachContext(ctx)
+
+		dbmWithCtx := withCtx.(*DbMap)
+		dbmWoutCtx := suite.Exec.(*DbMap)
+		suite.NotEqual(dbmWoutCtx, dbmWithCtx)
+		suite.NotEqual(dbmWithCtx.DbMap, dbmWoutCtx.DbMap)
+	})
+
+	suite.T().Run("Transaction AttachContext", func(t *testing.T) {
+		ctx := context.Background()
+		dbm := suite.Exec.(*DbMap)
+		txWoutCtx := &Transaction{Transaction: gorp.Transaction{}, dbmap: dbm}
+		txWithCtx := txWoutCtx.AttachContext(ctx).(*Transaction)
+
+		suite.NotEqual(txWoutCtx, txWithCtx)
+		suite.NotEqual(txWoutCtx.Transaction, txWithCtx.Transaction)
+	})
 }
 
 type TransactionTestSuite struct {
