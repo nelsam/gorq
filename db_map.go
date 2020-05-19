@@ -21,6 +21,7 @@ type SqlExecutor interface {
 	// against target.
 	Query(target interface{}) interfaces.Query
 	QueryContext(ctx context.Context, target interface{}) interfaces.Query
+	AttachContext(context.Context) SqlExecutor
 }
 
 // DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
@@ -94,6 +95,13 @@ func (m *DbMap) QueryContext(ctx context.Context, target interface{}) interfaces
 	gorpMap := &m.DbMap
 	gorpMap = gorpMap.WithContext(ctx).(*gorp.DbMap)
 	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
+}
+
+func (m *DbMap) AttachContext(ctx context.Context) SqlExecutor {
+	copy := &DbMap{}
+	*copy = *m
+	copy.DbMap = *copy.DbMap.WithContext(ctx).(*gorp.DbMap)
+	return copy
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
@@ -235,6 +243,12 @@ func (m *DbMap) table(target interface{}) *gorp.TableMap {
 type Transaction struct {
 	gorp.Transaction
 	dbmap *DbMap
+}
+
+// AttachContext is a no-op and returns the same object.
+// Use BeginContext for transactions.
+func (t *Transaction) AttachContext(ctx context.Context) SqlExecutor {
+	return t
 }
 
 // QueryContext just calls .Query. Transactions must be started using BeginContext for a
