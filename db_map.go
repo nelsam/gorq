@@ -278,6 +278,13 @@ func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
 		return &Transaction{Transaction: *e, dbmap: m}
 	case *gorp.DbMap:
 		return &DbMap{DbMap: *e}
+	// let's handle gorq types too, just in case it accidentally gets in here
+	// this can happen because both Transaction and DbMap implement the
+	// gorq.SqlExecutor interface, so it is a valid to pass them as an arg
+	case *Transaction:
+		return e
+	case *DbMap:
+		return e
 	}
 	panic("unable to convert gorp to gorq")
 }
