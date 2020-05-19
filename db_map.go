@@ -20,7 +20,7 @@ type SqlExecutor interface {
 	// Query should return a Query type that will perform queries
 	// against target.
 	Query(target interface{}) interfaces.Query
-	AttachContext(context.Context) SqlExecutor
+	QueryContext(ctx context.Context, target interface{}) interfaces.Query
 }
 
 // DbMap embeds "github.com/outdoorsy/gorp".DbMap and adds query
@@ -90,17 +90,36 @@ func (m *DbMap) Query(target interface{}) interfaces.Query {
 	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
 }
 
-func (m *DbMap) AttachContext(ctx context.Context) SqlExecutor {
-	copy := &DbMap{}
-	*copy = *m
-	copy.DbMap = *copy.DbMap.WithContext(ctx).(*gorp.DbMap)
-	return copy
+func (m *DbMap) QueryContext(ctx context.Context, target interface{}) interfaces.Query {
+	gorpMap := &m.DbMap
+	gorpMap = gorpMap.WithContext(ctx).(*gorp.DbMap)
+	return plans.Query(gorpMap, gorpMap, target, m.joinOps...)
 }
 
 // Begin acts just like "github.com/outdoorsy/gorp".DbMap.Begin,
 // except that its return type is gorq.Transaction.
 func (m *DbMap) Begin(timeout time.Duration) (*Transaction, error) {
 	t, err := m.DbMap.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	// if acquiring a lock takes more than timeout duration, kill it
+	if timeout != 0 {
+		_, err = t.Exec(fmt.Sprintf("SET LOCAL lock_timeout=%d;", int64(timeout/time.Millisecond)))
+		if err != nil {
+			t.Rollback()
+			return nil, err
+		}
+	}
+
+	return &Transaction{Transaction: *t, dbmap: m}, nil
+}
+
+// BeginContext acts just like "github.com/outdoorsy/gorp".DbMap.BeginContext,
+// except that its return type is gorq.Transaction.
+func (m *DbMap) BeginContext(ctx context.Context, timeout time.Duration) (*Transaction, error) {
+	t, err := m.DbMap.BeginContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +177,47 @@ func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
 	return nil
 }
 
+// WithTX creates a new transaction, calls your function with that transaction
+// as an argument and automatically commits or reverts the changes based on the
+// error return from your function.
+//
+// This is useful for one-off operations that need to be isolated from other
+// transactions. For example, several logically-separated operations in a single
+// event handler. This allows each separate operation to fail independently,
+// preventing the main transaction (if there is one) from needing a rollback.
+//
+// Returns an error that can either be an error with the begin/commit/rollback
+// or the error returned from your handler.
+func (m *DbMap) WithTXContext(ctx context.Context, fn func(tx *Transaction) error) error {
+	tx, err := m.BeginContext(ctx, 10*time.Second)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	defer func() {
+		recoverErr := recover()
+		if recoverErr != nil {
+			tx.Rollback()
+			panic(recoverErr)
+		}
+	}()
+
+	err = fn(tx)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return nil
+}
+
 func (m *DbMap) table(target interface{}) *gorp.TableMap {
 	t := reflect.TypeOf(target)
 	if t.Kind() == reflect.Ptr {
@@ -177,6 +237,12 @@ type Transaction struct {
 	dbmap *DbMap
 }
 
+// QueryContext just calls .Query. Transactions must be started using BeginContext for a
+// context to be used.
+func (t *Transaction) QueryContext(ctx context.Context, target interface{}) interfaces.Query {
+	return t.Query(target)
+}
+
 // Query runs a query within a transaction.  See DbMap.Query for full
 // documentation.
 func (t *Transaction) Query(target interface{}) interfaces.Query {
@@ -190,13 +256,6 @@ func (t *Transaction) Query(target interface{}) interfaces.Query {
 // to pass the original DbMap alongside.
 func (t *Transaction) DbMap() *DbMap {
 	return t.dbmap
-}
-
-func (t *Transaction) AttachContext(ctx context.Context) SqlExecutor {
-	copy := &Transaction{}
-	*copy = *t
-	copy.Transaction = *copy.Transaction.WithContext(ctx).(*gorp.Transaction)
-	return copy
 }
 
 func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
