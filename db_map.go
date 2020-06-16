@@ -276,12 +276,18 @@ func GorpToGorq(exec gorp.SqlExecutor, m *DbMap) SqlExecutor {
 	switch e := exec.(type) {
 	case *gorp.Transaction:
 		dbMap := DbMap{
-			DbMap:   *e.GetDbMap(),
-			joinOps: m.joinOps,
+			DbMap: *e.GetDbMap(),
+		}
+		if m != nil {
+			dbMap.joinOps = m.joinOps
 		}
 		return &Transaction{Transaction: *e, dbmap: &dbMap}
 	case *gorp.DbMap:
-		return &DbMap{DbMap: *e, joinOps: m.joinOps}
+		dbMap := &DbMap{DbMap: *e}
+		if m != nil {
+			dbMap.joinOps = m.joinOps
+		}
+		return dbMap
 	// let's handle gorq types too, just in case it accidentally gets in here
 	// this can happen because both Transaction and DbMap implement the
 	// gorq.SqlExecutor interface, so it is a valid to pass them as an arg
