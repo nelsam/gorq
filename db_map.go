@@ -10,6 +10,8 @@ import (
 	"github.com/outdoorsy/gorp"
 	"github.com/outdoorsy/gorq/interfaces"
 	"github.com/outdoorsy/gorq/plans"
+
+	"github.com/outdoorsy/api/utils"
 )
 
 // SqlExecutor is any type that can execute SQL statements.  Gorq's
@@ -73,16 +75,16 @@ func (m *DbMap) JoinOps() []plans.JoinOp {
 // reference struct that you passed to Query().  Here is a short
 // example of how you might run a query using this method:
 //
-//     // Allocate memory for a struct type to use as reference
-//     queryType := Model{}
+//	// Allocate memory for a struct type to use as reference
+//	queryType := Model{}
 //
-//     // Use the memory addresses of the model and its fields as
-//     // references to look up column names
-//     results, err := dbMap.Query(&queryType).
-//         Where().
-//         Equal(&queryType.Name, "foo").
-//         Greater(&queryType.StartDate, time.Now()).
-//         Select()
+//	// Use the memory addresses of the model and its fields as
+//	// references to look up column names
+//	results, err := dbMap.Query(&queryType).
+//	    Where().
+//	    Equal(&queryType.Name, "foo").
+//	    Greater(&queryType.StartDate, time.Now()).
+//	    Select()
 //
 // See the interfaces package for details on what the query types are
 // capable of.
@@ -155,7 +157,8 @@ func (m *DbMap) BeginContext(ctx context.Context, timeout time.Duration) (*Trans
 //
 // Returns an error that can either be an error with the begin/commit/rollback
 // or the error returned from your handler.
-func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
+func (m *DbMap) WithTX(fn func(tx *Transaction, dq *utils.DeferQueue) error) error {
+	var dq utils.DeferQueue
 	tx, err := m.Begin(10 * time.Second)
 	if err != nil {
 		tx.Rollback()
@@ -170,7 +173,7 @@ func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
 		}
 	}()
 
-	err = fn(tx)
+	err = fn(tx, &dq)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -181,6 +184,7 @@ func (m *DbMap) WithTX(fn func(tx *Transaction) error) error {
 		tx.Rollback()
 		return err
 	}
+	dq.Fire()
 
 	return nil
 }
