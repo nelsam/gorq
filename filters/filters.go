@@ -368,6 +368,15 @@ func GreaterOrEqual(fieldPtr interface{}, value interface{}) Filter {
 	}
 }
 
+// JSONContains returns a filter for string exist as a top-level key within the fieldPtr JSON value
+func JSONContains(fieldPtr interface{}, value interface{}) Filter {
+	return &ComparisonFilter{
+		Left:       fieldPtr,
+		Comparison: "?",
+		Right:      value,
+	}
+}
+
 // LessMod returns a filter for fieldPtr < value
 func LessMod(fieldPtr interface{}, value interface{}, mod func() string) Filter {
 	return &ComparisonFilter{
